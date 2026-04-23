@@ -1,13 +1,8 @@
-const { Pool } = require('pg');
+const { pool } = require('./database');
 const fs = require('fs');
 const path = require('path');
 
 async function autoInitDatabase() {
-  const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
-  });
-
   try {
     const check = await pool.query(`
       SELECT EXISTS (
@@ -18,7 +13,6 @@ async function autoInitDatabase() {
 
     if (check.rows[0].exists) {
       console.log('✅ Database tables already exist');
-      await pool.end();
       return;
     }
 
@@ -35,8 +29,6 @@ async function autoInitDatabase() {
     console.log('✅ Created ' + tables.rows.length + ' tables');
   } catch (err) {
     console.error('❌ Database init error:', err.message);
-  } finally {
-    await pool.end();
   }
 }
 
