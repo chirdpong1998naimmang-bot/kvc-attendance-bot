@@ -497,7 +497,7 @@ router.get('/seed-schedule', async (req, res) => {
     const classroom = await pool.query("SELECT id FROM classrooms WHERE room_name = 'ห้อง 301'");
     const classroomId = classroom.rows[0].id;
 
-    const lineGroup = await pool.query("SELECT id FROM line_groups WHERE line_group_id = 'C26147d321f87b82cbc9f2f7c405fb0de'");
+    const lineGroup = await pool.query("SELECT id FROM line_groups WHERE line_group_id = 'Cbb6438455ecfa7f4d51bd27ce55e6b72'");
     const lineGroupId = lineGroup.rows.length > 0 ? lineGroup.rows[0].id : null;
 
     // เพิ่มวิชาใหม่ถ้ายังไม่มี
