@@ -31,11 +31,7 @@ app.use(helmet({ contentSecurityPolicy: false }));
 
 // CORS สำหรับ LIFF App
 app.use(cors({
-  origin: [
-    'https://liff.line.me',
-    process.env.BASE_URL,
-    'http://localhost:3000'
-  ],
+  origin: '*',
   credentials: true
 }));
 
