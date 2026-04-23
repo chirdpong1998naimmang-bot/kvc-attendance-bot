@@ -1,0 +1,45 @@
+# ============================================================
+# Render Blueprint - ระบบเช็คชื่อผู้เรียน
+# ไฟล์นี้บอก Render ว่าต้องสร้างอะไรบ้าง
+# ============================================================
+
+databases:
+  - name: attendance-db
+    plan: free
+    databaseName: attendance_db
+    user: kvc_admin
+
+services:
+  - type: web
+    name: kvc-attendance-bot
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: LINE_CHANNEL_ID
+        value: 2009874832
+      - key: LINE_CHANNEL_SECRET
+        sync: false  # ต้องกรอกเองใน Render Dashboard
+      - key: LINE_CHANNEL_ACCESS_TOKEN
+        sync: false
+      - key: LIFF_ID
+        value: 2009878792-1yb5rLNs
+      - key: LIFF_URL
+        value: https://liff.line.me/2009878792-1yb5rLNs
+      - key: LINE_OWNER_USER_ID
+        value: U43dc8eaba35120851bc4fe413fde0900
+      - key: QR_EXPIRE_MINUTES
+        value: 30
+      - key: CLASSROOM_LAT
+        value: 14.0208
+      - key: CLASSROOM_LNG
+        value: 99.5322
+      - key: ALLOWED_RADIUS_METERS
+        value: 100
+      - key: DATABASE_URL
+        fromDatabase:
+          name: attendance-db
+          property: connectionString
