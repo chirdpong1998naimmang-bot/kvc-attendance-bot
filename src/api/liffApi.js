@@ -485,4 +485,73 @@ router.get('/seed-students', async (req, res) => {
   }
 });
 
+// ============================================================
+// GET /api/liff/seed-schedule - สร้างตารางสอน (รันครั้งเดียว)
+// ============================================================
+router.get('/seed-schedule', async (req, res) => {
+  try {
+    const teacher = await pool.query("SELECT id FROM teachers WHERE name = 'เชิดพงษ์'");
+    if (teacher.rows.length === 0) return res.status(404).json({ error: 'ไม่พบครู' });
+    const teacherId = teacher.rows[0].id;
+
+    const classroom = await pool.query("SELECT id FROM classrooms WHERE room_name = 'ห้อง 301'");
+    const classroomId = classroom.rows[0].id;
+
+    const lineGroup = await pool.query("SELECT id FROM line_groups WHERE line_group_id = 'C26147d321f87b82cbc9f2f7c405fb0de'");
+    const lineGroupId = lineGroup.rows.length > 0 ? lineGroup.rows[0].id : null;
+
+    // เพิ่มวิชาใหม่ถ้ายังไม่มี
+    await pool.query(
+      "INSERT INTO subjects (subject_code, subject_name, credits, education_level, teacher_id) VALUES ($1, $2, 3, 'ปวช.', $3) ON CONFLICT (subject_code) DO NOTHING",
+      ['30201-2104', 'การบัญชีปฏิบัติการภาษาอังกฤษ', teacherId]
+    );
+
+    const subj1 = await pool.query("SELECT id FROM subjects WHERE subject_code = '30201-2102'");
+    const subj2 = await pool.query("SELECT id FROM subjects WHERE subject_code = '30201-2104'");
+
+    // ลบตารางเก่า
+    await pool.query("DELETE FROM schedules WHERE teacher_id = $1", [teacherId]);
+
+    // จันทร์ คาบ 7-8 วิชาการประยุกต์ใช้โปรแกรมตารางงาน
+    await pool.query(
+      "INSERT INTO schedules (subject_id, teacher_id, classroom_id, line_group_id, day_of_week, start_period, end_period, auto_send, send_minutes_before) VALUES ($1,$2,$3,$4,1,7,8,true,5)",
+      [subj1.rows[0].id, teacherId, classroomId, lineGroupId]
+    );
+
+    // อังคาร คาบ 1-2 วิชาการบัญชีปฏิบัติการภาษาอังกฤษ
+    await pool.query(
+      "INSERT INTO schedules (subject_id, teacher_id, classroom_id, line_group_id, day_of_week, start_period, end_period, auto_send, send_minutes_before) VALUES ($1,$2,$3,$4,2,1,2,true,5)",
+      [subj2.rows[0].id, teacherId, classroomId, lineGroupId]
+    );
+
+    // พุธ คาบ 1-2 วิชาการบัญชีปฏิบัติการภาษาอังกฤษ
+    await pool.query(
+      "INSERT INTO schedules (subject_id, teacher_id, classroom_id, line_group_id, day_of_week, start_period, end_period, auto_send, send_minutes_before) VALUES ($1,$2,$3,$4,3,1,2,true,5)",
+      [subj2.rows[0].id, teacherId, classroomId, lineGroupId]
+    );
+
+    // พุธ คาบ 6-8 วิชาการประยุกต์ใช้โปรแกรมตารางงาน
+    await pool.query(
+      "INSERT INTO schedules (subject_id, teacher_id, classroom_id, line_group_id, day_of_week, start_period, end_period, auto_send, send_minutes_before) VALUES ($1,$2,$3,$4,3,6,8,true,5)",
+      [subj1.rows[0].id, teacherId, classroomId, lineGroupId]
+    );
+
+    const schedules = await pool.query(
+      "SELECT s.day_of_week, s.start_period, s.end_period, sub.subject_name FROM schedules s JOIN subjects sub ON s.subject_id = sub.id WHERE s.teacher_id = $1 ORDER BY s.day_of_week, s.start_period",
+      [teacherId]
+    );
+
+    const days = ['อาทิตย์','จันทร์','อังคาร','พุธ','พฤหัสบดี','ศุกร์','เสาร์'];
+    const result = schedules.rows.map(r => ({
+      day: days[r.day_of_week],
+      period: r.start_period + '-' + r.end_period,
+      subject: r.subject_name
+    }));
+
+    res.json({ success: true, schedules: result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = { liffApiRouter: router };
