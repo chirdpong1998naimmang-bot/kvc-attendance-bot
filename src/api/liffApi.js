@@ -554,4 +554,45 @@ router.get('/seed-schedule', async (req, res) => {
   }
 });
 
+// ============================================================
+// GET /api/liff/test-qr - ทดสอบส่ง QR เข้ากลุ่ม (ลบหลังทดสอบ)
+// ============================================================
+router.get('/test-qr', async (req, res) => {
+  try {
+    const { createQRSession } = require('../services/qrService');
+    const { sendQRToGroup } = require('../services/lineService');
+
+    const schedule = await pool.query(
+      "SELECT s.id, s.subject_id, s.teacher_id, s.line_group_id, sub.subject_name, lg.line_group_id AS line_gid FROM schedules s JOIN subjects sub ON s.subject_id = sub.id JOIN line_groups lg ON s.line_group_id = lg.id WHERE s.is_active = TRUE ORDER BY s.day_of_week LIMIT 1"
+    );
+
+    if (schedule.rows.length === 0) return res.json({ error: 'ไม่มีตารางสอน' });
+
+    const sch = schedule.rows[0];
+
+    const qrSession = await createQRSession({
+      scheduleId: sch.id,
+      subjectId: sch.subject_id,
+      teacherId: sch.teacher_id,
+      lineGroupId: sch.line_group_id,
+      qrType: 'check_in'
+    });
+
+    const sentAt = new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+
+    await sendQRToGroup(sch.line_gid, {
+      token: qrSession.token,
+      qrType: 'check_in',
+      subjectName: sch.subject_name,
+      room: 'ห้อง 301',
+      sentAt
+    });
+
+    res.json({ success: true, token: qrSession.token, subject: sch.subject_name, sentAt });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = { liffApiRouter: router };
+
