@@ -15,6 +15,7 @@ const { pool, testConnection } = require('./src/config/database');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const { autoInitDatabase } = require('./src/config/autoInit');
 
 // Render ตั้ง RENDER_EXTERNAL_URL ให้อัตโนมัติ
 if (!process.env.BASE_URL && process.env.RENDER_EXTERNAL_URL) {
@@ -73,7 +74,8 @@ app.get('/health', async (req, res) => {
 async function start() {
   // ทดสอบเชื่อมต่อ Database
   await testConnection();
-
+  await autoInitDatabase();
+  
   // เริ่ม Cron Job ส่ง QR อัตโนมัติ
   startScheduler();
 
