@@ -30,10 +30,7 @@ if (!process.env.BASE_URL && process.env.RENDER_EXTERNAL_URL) {
 app.use(helmet({ contentSecurityPolicy: false }));
 
 // CORS สำหรับ LIFF App
-app.use(cors({
-  origin: '*',
-  credentials: true
-}));
+app.use(cors());
 
 // ⚠️ สำคัญ: LINE webhook ต้องรับ raw body ก่อน express.json()
 // ดังนั้นเราไม่ใส่ express.json() ที่ app level
