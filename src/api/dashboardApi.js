@@ -15,15 +15,28 @@ router.get('/schedules', async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT s.id, s.day_of_week, s.start_period, s.end_period, s.auto_send,
-              sub.subject_name AS subject, c.room_name AS room, lg.group_name AS line_group
-       FROM schedules s JOIN subjects sub ON s.subject_id = sub.id
-       JOIN classrooms c ON s.classroom_id = c.id LEFT JOIN line_groups lg ON s.line_group_id = lg.id
-       WHERE s.is_active = TRUE ORDER BY s.day_of_week, s.start_period`
+              sub.subject_name, sub.subject_code,
+              c.room_name, lg.group_name, t.name AS teacher_name
+       FROM schedules s
+       JOIN subjects sub ON s.subject_id = sub.id
+       JOIN classrooms c ON s.classroom_id = c.id
+       LEFT JOIN line_groups lg ON s.line_group_id = lg.id
+       LEFT JOIN teachers t ON s.teacher_id = t.id
+       WHERE s.is_active = TRUE
+       ORDER BY s.day_of_week, s.start_period`
     );
     res.json(result.rows.map(r => ({
-      id: r.id, subject: r.subject, section: 'ปวช.2/1', day: DAYS_TH[r.day_of_week],
-      timeStart: PERIOD_TIMES[r.start_period]?.s || '', timeEnd: PERIOD_TIMES[r.end_period]?.e || '',
-      room: r.room, autoSend: r.auto_send, lineGroup: r.line_group
+      id: r.id,
+      subject_code: r.subject_code,
+      subject_name: r.subject_name,
+      section: 'ปวช.2/1',
+      day_of_week: DAYS_TH[r.day_of_week],
+      start_time: PERIOD_TIMES[r.start_period]?.s || '',
+      end_time: PERIOD_TIMES[r.end_period]?.e || '',
+      room: r.room_name,
+      teacher_name: r.teacher_name || '',
+      autoSend: r.auto_send,
+      lineGroup: r.group_name
     })));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
