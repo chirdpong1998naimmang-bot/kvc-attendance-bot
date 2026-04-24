@@ -101,6 +101,7 @@ router.get('/attendance', async (req, res) => {
 
 router.post('/send-qr', async (req, res) => {
   try {
+    const qrType = req.body.qrType || 'check_in';
     const schedule = await pool.query(
       `SELECT s.id, s.subject_id, s.teacher_id, s.line_group_id, sub.subject_name, c.room_name, lg.line_group_id AS line_gid
        FROM schedules s JOIN subjects sub ON s.subject_id = sub.id JOIN classrooms c ON s.classroom_id = c.id
@@ -109,10 +110,41 @@ router.post('/send-qr', async (req, res) => {
     if (schedule.rows.length === 0) return res.status(404).json({ error: 'ไม่มีตารางสอน' });
     const sch = schedule.rows[0];
     if (!sch.line_gid) return res.status(400).json({ error: 'ยังไม่ผูกกลุ่ม' });
-    const qr = await createQRSession({ scheduleId: sch.id, subjectId: sch.subject_id, teacherId: sch.teacher_id, lineGroupId: sch.line_group_id, qrType: 'check_in' });
+    const qr = await createQRSession({ scheduleId: sch.id, subjectId: sch.subject_id, teacherId: sch.teacher_id, lineGroupId: sch.line_group_id, qrType });
     const sentAt = new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
-    await sendQRToGroup(sch.line_gid, { token: qr.token, qrType: 'check_in', subjectName: sch.subject_name, room: sch.room_name, sentAt });
-    res.json({ success: true, token: qr.token, sentAt });
+    await sendQRToGroup(sch.line_gid, { token: qr.token, qrType, subjectName: sch.subject_name, room: sch.room_name, sentAt });
+    res.json({ success: true, token: qr.token, sentAt, qrType });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ─── CLASSROOMS (พิกัด GPS) ───
+
+router.get('/classrooms', async (req, res) => {
+  try {
+    const result = await pool.query("SELECT id, room_name, building, latitude, longitude, allowed_radius_m FROM classrooms WHERE is_active = TRUE ORDER BY room_name");
+    res.json(result.rows);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.put('/classrooms/:id', async (req, res) => {
+  try {
+    const { room_name, latitude, longitude, allowed_radius_m } = req.body;
+    await pool.query(
+      "UPDATE classrooms SET room_name = COALESCE($1, room_name), latitude = COALESCE($2, latitude), longitude = COALESCE($3, longitude), allowed_radius_m = COALESCE($4, allowed_radius_m) WHERE id = $5",
+      [room_name, latitude, longitude, allowed_radius_m, req.params.id]
+    );
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/classrooms', async (req, res) => {
+  try {
+    const { room_name, building, latitude, longitude, allowed_radius_m } = req.body;
+    const result = await pool.query(
+      "INSERT INTO classrooms (room_name, building, latitude, longitude, allowed_radius_m) VALUES ($1, $2, $3, $4, $5) RETURNING id",
+      [room_name, building || '', latitude, longitude, allowed_radius_m || 100]
+    );
+    res.json({ success: true, id: result.rows[0].id });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
