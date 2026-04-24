@@ -26,6 +26,7 @@ router.get('/schedules', async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT s.id, s.day_of_week, s.start_period, s.end_period, s.auto_send,
+              s.custom_start_time, s.custom_end_time,
               sub.subject_name, sub.subject_code,
               c.room_name, lg.group_name, t.name AS teacher_name
        FROM schedules s
@@ -42,8 +43,8 @@ router.get('/schedules', async (req, res) => {
       subject_name: r.subject_name,
       section: 'ปวช.2/1',
       day_of_week: DAYS_TH[r.day_of_week],
-      start_time: PERIOD_TIMES[r.start_period]?.s || '',
-      end_time: PERIOD_TIMES[r.end_period]?.e || '',
+      start_time: r.custom_start_time || PERIOD_TIMES[r.start_period]?.s || '',
+      end_time: r.custom_end_time || PERIOD_TIMES[r.end_period]?.e || '',
       room: r.room_name,
       teacher_name: r.teacher_name || '',
       autoSend: r.auto_send,
@@ -56,17 +57,19 @@ router.post('/schedules', async (req, res) => {
   try {
     const { subject_id, classroom_id, line_group_id, teacher_id, day_of_week, start_time, end_time, auto_send } = req.body;
     const dayIndex = typeof day_of_week === 'number' ? day_of_week : DAYS_TH.indexOf(day_of_week);
-    const startP = Object.entries(PERIOD_TIMES).find(([,v]) => v.s === start_time)?.[0];
-    const endP = Object.entries(PERIOD_TIMES).find(([,v]) => v.e === end_time)?.[0];
 
-    if (dayIndex < 0 || !startP || !endP) {
-      return res.status(400).json({ error: 'ข้อมูลวัน/เวลาไม่ถูกต้อง' });
+    // พยายาม match กับ period number (ถ้าตรง)
+    const startP = Object.entries(PERIOD_TIMES).find(([,v]) => v.s === start_time)?.[0] || 1;
+    const endP = Object.entries(PERIOD_TIMES).find(([,v]) => v.e === end_time)?.[0] || 2;
+
+    if (dayIndex < 0) {
+      return res.status(400).json({ error: 'วันไม่ถูกต้อง' });
     }
 
     const result = await pool.query(
-      `INSERT INTO schedules (teacher_id, subject_id, classroom_id, line_group_id, day_of_week, start_period, end_period, auto_send)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
-      [teacher_id || 1, subject_id, classroom_id, line_group_id, dayIndex, startP, endP, auto_send !== false]
+      `INSERT INTO schedules (teacher_id, subject_id, classroom_id, line_group_id, day_of_week, start_period, end_period, custom_start_time, custom_end_time, auto_send)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
+      [teacher_id || 1, subject_id, classroom_id, line_group_id, dayIndex, startP, endP, start_time || null, end_time || null, auto_send !== false]
     );
     res.json({ success: true, id: result.rows[0].id });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -76,11 +79,29 @@ router.put('/schedules/:id', async (req, res) => {
   try {
     const { subject_name, subject_code, day_of_week, start_time, end_time, room, section } = req.body;
     const dayIndex = DAYS_TH.indexOf(day_of_week);
-    const startP = Object.entries(PERIOD_TIMES).find(([,v]) => v.s === start_time)?.[0];
-    const endP = Object.entries(PERIOD_TIMES).find(([,v]) => v.e === end_time)?.[0];
-    if (startP) await pool.query("UPDATE schedules SET start_period = $1 WHERE id = $2", [startP, req.params.id]);
-    if (endP) await pool.query("UPDATE schedules SET end_period = $1 WHERE id = $2", [endP, req.params.id]);
-    if (dayIndex >= 0) await pool.query("UPDATE schedules SET day_of_week = $1 WHERE id = $2", [dayIndex, req.params.id]);
+
+    // อัปเดตวัน
+    if (dayIndex >= 0) {
+      await pool.query("UPDATE schedules SET day_of_week = $1 WHERE id = $2", [dayIndex, req.params.id]);
+    }
+
+    // อัปเดตเวลา — เก็บตรงๆ ใน custom_start_time / custom_end_time
+    // พร้อมพยายาม match กับ period number ด้วย (สำหรับ cron job)
+    if (start_time) {
+      const startP = Object.entries(PERIOD_TIMES).find(([,v]) => v.s === start_time)?.[0];
+      await pool.query(
+        "UPDATE schedules SET custom_start_time = $1, start_period = COALESCE($2, start_period) WHERE id = $3",
+        [start_time, startP ? parseInt(startP) : null, req.params.id]
+      );
+    }
+    if (end_time) {
+      const endP = Object.entries(PERIOD_TIMES).find(([,v]) => v.e === end_time)?.[0];
+      await pool.query(
+        "UPDATE schedules SET custom_end_time = $1, end_period = COALESCE($2, end_period) WHERE id = $3",
+        [end_time, endP ? parseInt(endP) : null, req.params.id]
+      );
+    }
+
     await pool.query("UPDATE schedules SET updated_at = NOW() WHERE id = $1", [req.params.id]);
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
