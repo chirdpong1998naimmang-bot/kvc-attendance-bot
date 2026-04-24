@@ -11,6 +11,17 @@ const PERIOD_TIMES = {
   5:{s:'13:00',e:'13:50'},6:{s:'13:50',e:'14:40'},7:{s:'14:50',e:'15:40'},8:{s:'15:40',e:'16:30'}
 };
 
+// ─── [BUG FIX #1] สถานะเช็คชื่อ 5 แบบ ───
+const VALID_STATUSES = ['present', 'late', 'absent', 'sick_leave', 'personal_leave'];
+const STATUS_LABELS = {
+  present: 'มา', late: 'สาย', absent: 'ขาด',
+  sick_leave: 'ลาป่วย', personal_leave: 'ลากิจ'
+};
+
+// ═══════════════════════════════════════════════
+// SCHEDULES
+// ═══════════════════════════════════════════════
+
 router.get('/schedules', async (req, res) => {
   try {
     const result = await pool.query(
@@ -41,18 +52,22 @@ router.get('/schedules', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-router.post('/students', async (req, res) => {
+router.post('/schedules', async (req, res) => {
   try {
-    const { student_id, studentId, title, first_name, last_name, name, section, level, year, department } = req.body;
-    const code = student_id || studentId;
-    const fullName = name || ((title || '') + (first_name || '') + ' ' + (last_name || '')).trim();
-    if (!code || !fullName) return res.status(400).json({ error: 'กรุณากรอกรหัสและชื่อ' });
-    const groupName = section ? (level || 'ปวช.') + year + '/' + section : 'ปวช.2/1';
+    const { subject_id, classroom_id, line_group_id, teacher_id, day_of_week, start_time, end_time, auto_send } = req.body;
+    const dayIndex = typeof day_of_week === 'number' ? day_of_week : DAYS_TH.indexOf(day_of_week);
+    const startP = Object.entries(PERIOD_TIMES).find(([,v]) => v.s === start_time)?.[0];
+    const endP = Object.entries(PERIOD_TIMES).find(([,v]) => v.e === end_time)?.[0];
+
+    if (dayIndex < 0 || !startP || !endP) {
+      return res.status(400).json({ error: 'ข้อมูลวัน/เวลาไม่ถูกต้อง' });
+    }
+
     const result = await pool.query(
-      "INSERT INTO students (student_code, name, group_name, education_level) VALUES ($1, $2, $3, $4) ON CONFLICT (student_code) DO NOTHING RETURNING id",
-      [code, fullName, groupName, level || 'ปวช.']
+      `INSERT INTO schedules (teacher_id, subject_id, classroom_id, line_group_id, day_of_week, start_period, end_period, auto_send)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+      [teacher_id || 1, subject_id, classroom_id, line_group_id, dayIndex, startP, endP, auto_send !== false]
     );
-    if (result.rows.length === 0) return res.status(409).json({ error: 'รหัสนักเรียนซ้ำ' });
     res.json({ success: true, id: result.rows[0].id });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -78,6 +93,10 @@ router.delete('/schedules/:id', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ═══════════════════════════════════════════════
+// STUDENTS
+// ═══════════════════════════════════════════════
+
 router.get('/students', async (req, res) => {
   try {
     const result = await pool.query("SELECT id, student_code, name, group_name, education_level, line_user_id FROM students WHERE is_active = TRUE ORDER BY student_code");
@@ -102,6 +121,22 @@ router.get('/students', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+router.post('/students', async (req, res) => {
+  try {
+    const { student_id, studentId, title, first_name, last_name, name, section, level, year, department } = req.body;
+    const code = student_id || studentId;
+    const fullName = name || ((title || '') + (first_name || '') + ' ' + (last_name || '')).trim();
+    if (!code || !fullName) return res.status(400).json({ error: 'กรุณากรอกรหัสและชื่อ' });
+    const groupName = section ? (level || 'ปวช.') + year + '/' + section : 'ปวช.2/1';
+    const result = await pool.query(
+      "INSERT INTO students (student_code, name, group_name, education_level) VALUES ($1, $2, $3, $4) ON CONFLICT (student_code) DO NOTHING RETURNING id",
+      [code, fullName, groupName, level || 'ปวช.']
+    );
+    if (result.rows.length === 0) return res.status(409).json({ error: 'รหัสนักเรียนซ้ำ' });
+    res.json({ success: true, id: result.rows[0].id });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 router.put('/students/:id', async (req, res) => {
   try {
     const { title, first_name, last_name, name, section, level } = req.body;
@@ -121,23 +156,104 @@ router.delete('/students/:id', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ═══════════════════════════════════════════════
+// ATTENDANCE  [BUG FIX #1: 5 สถานะ + PUT + Manual]
+// ═══════════════════════════════════════════════
+
+// ดึง status labels สำหรับ Dashboard dropdown
+router.get('/attendance/statuses', (req, res) => {
+  res.json({ statuses: VALID_STATUSES, labels: STATUS_LABELS });
+});
+
 router.get('/attendance', async (req, res) => {
   try {
     const date = req.query.date || new Date().toISOString().slice(0, 10);
     const result = await pool.query(
-      `SELECT ar.id, st.student_code, st.name, st.group_name, ar.check_type, ar.status, ar.checked_at, ar.face_confidence, sub.subject_name
-       FROM attendance_records ar JOIN students st ON ar.student_id = st.id
-       JOIN qr_sessions qs ON ar.qr_session_id = qs.id JOIN subjects sub ON qs.subject_id = sub.id
-       WHERE DATE(ar.checked_at) = $1 ORDER BY ar.checked_at DESC`, [date]
+      `SELECT ar.id, st.student_code, st.name, st.group_name,
+              ar.check_type, ar.status, ar.checked_at, ar.face_confidence,
+              ar.remark, ar.is_manual,
+              sub.subject_name
+       FROM attendance_records ar
+       JOIN students st ON ar.student_id = st.id
+       LEFT JOIN qr_sessions qs ON ar.qr_session_id = qs.id
+       LEFT JOIN subjects sub ON qs.subject_id = sub.id
+       WHERE DATE(ar.checked_at) = $1
+       ORDER BY ar.checked_at DESC`, [date]
     );
     res.json(result.rows.map(r => ({
-      id: r.id, studentId: r.student_code, name: r.name, section: r.group_name, department: 'การบัญชี',
-      subject: r.subject_name, status: r.status,
+      id: r.id,
+      studentId: r.student_code,
+      name: r.name,
+      section: r.group_name,
+      department: 'การบัญชี',
+      subject: r.subject_name || '-',
+      status: r.status,
+      statusLabel: STATUS_LABELS[r.status] || r.status,
       time: new Date(r.checked_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }),
-      note: r.face_confidence ? `Face: ${Math.round(r.face_confidence)}%` : ''
+      note: r.remark || (r.face_confidence ? `Face: ${Math.round(r.face_confidence)}%` : ''),
+      isManual: r.is_manual || false
     })));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
+
+// [NEW] แก้สถานะเช็คชื่อ (ครูแก้ทีหลัง)
+router.put('/attendance/:id', async (req, res) => {
+  try {
+    const { status, remark } = req.body;
+
+    if (!VALID_STATUSES.includes(status)) {
+      return res.status(400).json({
+        error: `สถานะไม่ถูกต้อง ต้องเป็น: ${Object.values(STATUS_LABELS).join(', ')}`,
+        valid_statuses: VALID_STATUSES,
+        labels: STATUS_LABELS
+      });
+    }
+
+    const result = await pool.query(
+      `UPDATE attendance_records
+       SET status = $1, remark = COALESCE($2, remark), updated_at = NOW()
+       WHERE id = $3 RETURNING id, status`,
+      [status, remark || null, req.params.id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'ไม่พบข้อมูลเช็คชื่อ' });
+    }
+    res.json({ success: true, id: result.rows[0].id, status, statusLabel: STATUS_LABELS[status] });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// [NEW] ครูบันทึกมือ (ลาป่วย/ลากิจ โดยไม่ต้องมี QR)
+router.post('/attendance/manual', async (req, res) => {
+  try {
+    const { student_id, schedule_id, status, remark, date } = req.body;
+
+    if (!student_id || !status) {
+      return res.status(400).json({ error: 'ต้องระบุ student_id และ status' });
+    }
+    if (!VALID_STATUSES.includes(status)) {
+      return res.status(400).json({
+        error: `สถานะไม่ถูกต้อง ต้องเป็น: ${Object.values(STATUS_LABELS).join(', ')}`,
+        valid_statuses: VALID_STATUSES
+      });
+    }
+
+    const checkDate = date || new Date().toISOString().slice(0, 10);
+
+    const result = await pool.query(
+      `INSERT INTO attendance_records (student_id, schedule_id, status, check_type, remark, checked_at, is_manual)
+       VALUES ($1, $2, $3, 'manual', $4, ($5::date + LOCALTIME), TRUE)
+       RETURNING id`,
+      [student_id, schedule_id || null, status, remark || STATUS_LABELS[status], checkDate]
+    );
+
+    res.json({ success: true, id: result.rows[0].id, status, statusLabel: STATUS_LABELS[status] });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ═══════════════════════════════════════════════
+// SEND QR
+// ═══════════════════════════════════════════════
 
 router.post('/send-qr', async (req, res) => {
   try {
@@ -157,12 +273,26 @@ router.post('/send-qr', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ─── CLASSROOMS (พิกัด GPS) ───
+// ═══════════════════════════════════════════════
+// CLASSROOMS (พิกัด GPS)  [BUG FIX #2: floor INSERT]
+// ═══════════════════════════════════════════════
 
 router.get('/classrooms', async (req, res) => {
   try {
     const result = await pool.query("SELECT id, room_name, building, floor, latitude, longitude, allowed_radius_m FROM classrooms WHERE is_active = TRUE ORDER BY room_name");
     res.json(result.rows);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// [BUG FIX #2] เพิ่ม floor ใน INSERT (เดิมไม่มี)
+router.post('/classrooms', async (req, res) => {
+  try {
+    const { room_name, building, floor, latitude, longitude, allowed_radius_m } = req.body;
+    const result = await pool.query(
+      "INSERT INTO classrooms (room_name, building, floor, latitude, longitude, allowed_radius_m) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
+      [room_name, building || '', floor || null, latitude, longitude, allowed_radius_m || 100]
+    );
+    res.json({ success: true, id: result.rows[0].id });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -174,17 +304,6 @@ router.put('/classrooms/:id', async (req, res) => {
       [room_name, building, floor, latitude, longitude, allowed_radius_m, req.params.id]
     );
     res.json({ success: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-router.post('/classrooms', async (req, res) => {
-  try {
-    const { room_name, building, latitude, longitude, allowed_radius_m } = req.body;
-    const result = await pool.query(
-      "INSERT INTO classrooms (room_name, building, latitude, longitude, allowed_radius_m) VALUES ($1, $2, $3, $4, $5) RETURNING id",
-      [room_name, building || '', latitude, longitude, allowed_radius_m || 100]
-    );
-    res.json({ success: true, id: result.rows[0].id });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
