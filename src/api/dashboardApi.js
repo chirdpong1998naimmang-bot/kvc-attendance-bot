@@ -57,6 +57,20 @@ router.post('/students', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+router.put('/schedules/:id', async (req, res) => {
+  try {
+    const { subject_name, subject_code, day_of_week, start_time, end_time, room, section } = req.body;
+    const dayIndex = DAYS_TH.indexOf(day_of_week);
+    const startP = Object.entries(PERIOD_TIMES).find(([,v]) => v.s === start_time)?.[0];
+    const endP = Object.entries(PERIOD_TIMES).find(([,v]) => v.e === end_time)?.[0];
+    if (startP) await pool.query("UPDATE schedules SET start_period = $1 WHERE id = $2", [startP, req.params.id]);
+    if (endP) await pool.query("UPDATE schedules SET end_period = $1 WHERE id = $2", [endP, req.params.id]);
+    if (dayIndex >= 0) await pool.query("UPDATE schedules SET day_of_week = $1 WHERE id = $2", [dayIndex, req.params.id]);
+    await pool.query("UPDATE schedules SET updated_at = NOW() WHERE id = $1", [req.params.id]);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 router.delete('/schedules/:id', async (req, res) => {
   try {
     await pool.query("UPDATE schedules SET is_active = FALSE WHERE id = $1", [req.params.id]);
@@ -147,17 +161,17 @@ router.post('/send-qr', async (req, res) => {
 
 router.get('/classrooms', async (req, res) => {
   try {
-    const result = await pool.query("SELECT id, room_name, building, latitude, longitude, allowed_radius_m FROM classrooms WHERE is_active = TRUE ORDER BY room_name");
+    const result = await pool.query("SELECT id, room_name, building, floor, latitude, longitude, allowed_radius_m FROM classrooms WHERE is_active = TRUE ORDER BY room_name");
     res.json(result.rows);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 router.put('/classrooms/:id', async (req, res) => {
   try {
-    const { room_name, latitude, longitude, allowed_radius_m } = req.body;
+    const { room_name, building, floor, latitude, longitude, allowed_radius_m } = req.body;
     await pool.query(
-      "UPDATE classrooms SET room_name = COALESCE($1, room_name), latitude = COALESCE($2, latitude), longitude = COALESCE($3, longitude), allowed_radius_m = COALESCE($4, allowed_radius_m) WHERE id = $5",
-      [room_name, latitude, longitude, allowed_radius_m, req.params.id]
+      "UPDATE classrooms SET room_name = COALESCE($1, room_name), building = COALESCE($2, building), floor = $3, latitude = COALESCE($4, latitude), longitude = COALESCE($5, longitude), allowed_radius_m = COALESCE($6, allowed_radius_m) WHERE id = $7",
+      [room_name, building, floor, latitude, longitude, allowed_radius_m, req.params.id]
     );
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
