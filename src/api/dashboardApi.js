@@ -41,24 +41,18 @@ router.get('/schedules', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-router.post('/schedules', async (req, res) => {
+router.post('/students', async (req, res) => {
   try {
-    const { subject, day, timeStart, timeEnd, room } = req.body;
-    const dayIndex = DAYS_TH.indexOf(day);
-    const startP = Object.entries(PERIOD_TIMES).find(([,v]) => v.s === timeStart)?.[0] || 1;
-    const endP = Object.entries(PERIOD_TIMES).find(([,v]) => v.e === timeEnd)?.[0] || startP;
-    const teacher = await pool.query("SELECT id FROM teachers LIMIT 1");
-    const classroom = await pool.query("SELECT id FROM classrooms LIMIT 1");
-    const lineGroup = await pool.query("SELECT id FROM line_groups WHERE is_active = TRUE LIMIT 1");
-    let subj = await pool.query("SELECT id FROM subjects WHERE subject_name = $1", [subject]);
-    if (subj.rows.length === 0) {
-      subj = await pool.query("INSERT INTO subjects (subject_code, subject_name, teacher_id) VALUES ($1, $2, $3) RETURNING id",
-        ['NEW-' + Date.now(), subject, teacher.rows[0]?.id]);
-    }
+    const { student_id, studentId, title, first_name, last_name, name, section, level, year, department } = req.body;
+    const code = student_id || studentId;
+    const fullName = name || ((title || '') + (first_name || '') + ' ' + (last_name || '')).trim();
+    if (!code || !fullName) return res.status(400).json({ error: 'กรุณากรอกรหัสและชื่อ' });
+    const groupName = section ? (level || 'ปวช.') + year + '/' + section : 'ปวช.2/1';
     const result = await pool.query(
-      "INSERT INTO schedules (subject_id, teacher_id, classroom_id, line_group_id, day_of_week, start_period, end_period, auto_send, send_minutes_before) VALUES ($1,$2,$3,$4,$5,$6,$7,TRUE,5) RETURNING id",
-      [subj.rows[0].id, teacher.rows[0]?.id, classroom.rows[0]?.id, lineGroup.rows[0]?.id, dayIndex, startP, endP]
+      "INSERT INTO students (student_code, name, group_name, education_level) VALUES ($1, $2, $3, $4) ON CONFLICT (student_code) DO NOTHING RETURNING id",
+      [code, fullName, groupName, level || 'ปวช.']
     );
+    if (result.rows.length === 0) return res.status(409).json({ error: 'รหัสนักเรียนซ้ำ' });
     res.json({ success: true, id: result.rows[0].id });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
