@@ -88,13 +88,15 @@ router.get('/students', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-router.post('/students', async (req, res) => {
+router.put('/students/:id', async (req, res) => {
   try {
-    const { studentId, name, section } = req.body;
-    if (!studentId || !name) return res.status(400).json({ error: 'กรุณากรอกรหัสและชื่อ' });
-    const result = await pool.query("INSERT INTO students (student_code, name, group_name, education_level) VALUES ($1, $2, $3, 'ปวช.') ON CONFLICT (student_code) DO NOTHING RETURNING id", [studentId, name, section || 'ปวช.2/1']);
-    if (result.rows.length === 0) return res.status(409).json({ error: 'รหัสซ้ำ' });
-    res.json({ success: true, id: result.rows[0].id });
+    const { title, first_name, last_name, name, section, level } = req.body;
+    const fullName = name || ((title || '') + (first_name || '') + ' ' + (last_name || '')).trim();
+    await pool.query(
+      "UPDATE students SET name = COALESCE($1, name), group_name = COALESCE($2, group_name), education_level = COALESCE($3, education_level), updated_at = NOW() WHERE id = $4",
+      [fullName, section, level, req.params.id]
+    );
+    res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
