@@ -66,6 +66,38 @@ async function runMigrations() {
     }
 
     console.log('✅ Migrations complete (5 statuses + manual columns)');
+
+    // ─── Migration 2: custom time ในตารางสอน ───
+    console.log('🔄 Running migration 2 (custom schedule times)...');
+
+    await client.query(`
+      ALTER TABLE schedules
+      ADD COLUMN IF NOT EXISTS custom_start_time VARCHAR(5)
+    `);
+    await client.query(`
+      ALTER TABLE schedules
+      ADD COLUMN IF NOT EXISTS custom_end_time VARCHAR(5)
+    `);
+    console.log('  ✓ custom_start_time / custom_end_time columns');
+
+    // เติมค่าเริ่มต้นจาก period_times (ถ้ายังเป็น NULL)
+    await client.query(`
+      UPDATE schedules s
+      SET custom_start_time = LPAD(
+            CASE s.start_period
+              WHEN 1 THEN '08:30' WHEN 2 THEN '09:20' WHEN 3 THEN '10:20' WHEN 4 THEN '11:10'
+              WHEN 5 THEN '13:00' WHEN 6 THEN '13:50' WHEN 7 THEN '14:50' WHEN 8 THEN '15:40'
+            END, 5, '0'),
+          custom_end_time = LPAD(
+            CASE s.end_period
+              WHEN 1 THEN '09:20' WHEN 2 THEN '10:10' WHEN 3 THEN '11:10' WHEN 4 THEN '12:00'
+              WHEN 5 THEN '13:50' WHEN 6 THEN '14:40' WHEN 7 THEN '15:40' WHEN 8 THEN '16:30'
+            END, 5, '0')
+      WHERE s.custom_start_time IS NULL OR s.custom_end_time IS NULL
+    `);
+    console.log('  ✓ populated existing schedules with times');
+
+    console.log('✅ All migrations complete');
   } catch (err) {
     if (err.code === '42710') {
       console.log('✅ Migrations already applied');
