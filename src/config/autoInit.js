@@ -80,6 +80,17 @@ async function runMigrations() {
     `);
     console.log('  ✓ custom_start_time / custom_end_time columns');
 
+    // เพิ่ม semester / academic_year
+    await client.query(`
+      ALTER TABLE schedules
+      ADD COLUMN IF NOT EXISTS semester VARCHAR(10)
+    `);
+    await client.query(`
+      ALTER TABLE schedules
+      ADD COLUMN IF NOT EXISTS academic_year VARCHAR(10)
+    `);
+    console.log('  ✓ semester / academic_year columns');
+
     // เติมค่าเริ่มต้นจาก period_times (ถ้ายังเป็น NULL)
     await client.query(`
       UPDATE schedules s
