@@ -26,7 +26,7 @@ router.get('/schedules', async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT s.id, s.day_of_week, s.start_period, s.end_period, s.auto_send,
-              s.custom_start_time, s.custom_end_time,
+              s.custom_start_time, s.custom_end_time, s.semester, s.academic_year,
               sub.subject_name, sub.subject_code,
               c.room_name, lg.group_name, t.name AS teacher_name
        FROM schedules s
@@ -48,7 +48,9 @@ router.get('/schedules', async (req, res) => {
       room: r.room_name,
       teacher_name: r.teacher_name || '',
       autoSend: r.auto_send,
-      lineGroup: r.group_name
+      lineGroup: r.group_name,
+      semester: r.semester || '',
+      academic_year: r.academic_year || ''
     })));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -77,7 +79,7 @@ router.post('/schedules', async (req, res) => {
 
 router.put('/schedules/:id', async (req, res) => {
   try {
-    const { subject_name, subject_code, day_of_week, start_time, end_time, room, section } = req.body;
+    const { subject_name, subject_code, day_of_week, start_time, end_time, room, section, semester, academic_year } = req.body;
     const dayIndex = DAYS_TH.indexOf(day_of_week);
 
     // อัปเดตวัน
@@ -86,7 +88,6 @@ router.put('/schedules/:id', async (req, res) => {
     }
 
     // อัปเดตเวลา — เก็บตรงๆ ใน custom_start_time / custom_end_time
-    // พร้อมพยายาม match กับ period number ด้วย (สำหรับ cron job)
     if (start_time) {
       const startP = Object.entries(PERIOD_TIMES).find(([,v]) => v.s === start_time)?.[0];
       await pool.query(
@@ -99,6 +100,14 @@ router.put('/schedules/:id', async (req, res) => {
       await pool.query(
         "UPDATE schedules SET custom_end_time = $1, end_period = COALESCE($2, end_period) WHERE id = $3",
         [end_time, endP ? parseInt(endP) : null, req.params.id]
+      );
+    }
+
+    // อัปเดตภาคเรียน / ปีการศึกษา
+    if (semester !== undefined || academic_year !== undefined) {
+      await pool.query(
+        "UPDATE schedules SET semester = COALESCE($1, semester), academic_year = COALESCE($2, academic_year) WHERE id = $3",
+        [semester || null, academic_year || null, req.params.id]
       );
     }
 
