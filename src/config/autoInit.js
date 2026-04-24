@@ -26,6 +26,13 @@ async function runMigrations() {
       ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()
     `);
 
+    // 3.5 เพิ่มคอลัมน์ leave_image (เก็บรูปหลักฐานการลา)
+    await client.query(`
+      ALTER TABLE attendance_records
+      ADD COLUMN IF NOT EXISTS leave_image TEXT
+    `);
+    console.log('  ✓ leave_image column');
+
     // 4. อนุญาตให้ qr_session_id เป็น NULL (สำหรับ manual entry)
     const colCheck = await client.query(`
       SELECT is_nullable FROM information_schema.columns
