@@ -197,32 +197,42 @@ router.get('/attendance/statuses', (req, res) => {
 
 router.get('/attendance', async (req, res) => {
   try {
-    const date = req.query.date || new Date().toISOString().slice(0, 10);
+    // ใช้เวลาไทยเป็นหลัก
+    const thaiNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Bangkok' }));
+    const date = req.query.date || thaiNow.toISOString().slice(0, 10);
     const result = await pool.query(
       `SELECT ar.id, st.student_code, st.name, st.group_name,
-              ar.check_type, ar.status, ar.checked_at, ar.face_confidence,
+              ar.check_type, ar.status,
+              ar.checked_at AT TIME ZONE 'Asia/Bangkok' AS checked_at_th,
+              ar.face_confidence,
               ar.remark, ar.is_manual,
               sub.subject_name
        FROM attendance_records ar
        JOIN students st ON ar.student_id = st.id
        LEFT JOIN qr_sessions qs ON ar.qr_session_id = qs.id
        LEFT JOIN subjects sub ON qs.subject_id = sub.id
-       WHERE DATE(ar.checked_at) = $1
+       WHERE DATE(ar.checked_at AT TIME ZONE 'Asia/Bangkok') = $1
        ORDER BY ar.checked_at DESC`, [date]
     );
-    res.json(result.rows.map(r => ({
-      id: r.id,
-      studentId: r.student_code,
-      name: r.name,
-      section: r.group_name,
-      department: 'การบัญชี',
-      subject: r.subject_name || '-',
-      status: r.status,
-      statusLabel: STATUS_LABELS[r.status] || r.status,
-      time: new Date(r.checked_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }),
-      note: r.remark || (r.face_confidence ? `Face: ${Math.round(r.face_confidence)}%` : ''),
-      isManual: r.is_manual || false
-    })));
+    res.json(result.rows.map(r => {
+      const checkedAt = r.checked_at_th || r.checked_at;
+      const timeStr = checkedAt
+        ? new Date(checkedAt).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bangkok' })
+        : '-';
+      return {
+        id: r.id,
+        studentId: r.student_code,
+        name: r.name,
+        section: r.group_name,
+        department: 'การบัญชี',
+        subject: r.subject_name || '-',
+        status: r.status,
+        statusLabel: STATUS_LABELS[r.status] || r.status,
+        time: timeStr,
+        note: r.remark || (r.face_confidence ? `Face: ${Math.round(r.face_confidence)}%` : ''),
+        isManual: r.is_manual || false
+      };
+    }));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -250,6 +260,20 @@ router.put('/attendance/:id', async (req, res) => {
       return res.status(404).json({ error: 'ไม่พบข้อมูลเช็คชื่อ' });
     }
     res.json({ success: true, id: result.rows[0].id, status, statusLabel: STATUS_LABELS[status] });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// [NEW] ลบข้อมูลเช็คชื่อ
+router.delete('/attendance/:id', async (req, res) => {
+  try {
+    const result = await pool.query(
+      'DELETE FROM attendance_records WHERE id = $1 RETURNING id',
+      [req.params.id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'ไม่พบข้อมูลเช็คชื่อ' });
+    }
+    res.json({ success: true, id: result.rows[0].id });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
