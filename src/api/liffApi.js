@@ -433,6 +433,134 @@ router.post('/teacher/manual-qr', async (req, res) => {
 });
 
 // ============================================================
+// POST /api/liff/leave-request - แจ้งลาป่วย/ลากิจ ผ่าน LIFF
+// ============================================================
+router.post('/leave-request', async (req, res) => {
+  try {
+    const { lineUserId, token, leaveType, leaveImage, remark } = req.body;
+
+    // ---- 1. Validate input ----
+    if (!lineUserId || !token || !leaveType) {
+      return res.status(400).json({ success: false, error: 'ข้อมูลไม่ครบ' });
+    }
+
+    const validLeaveTypes = ['sick_leave', 'personal_leave'];
+    if (!validLeaveTypes.includes(leaveType)) {
+      return res.status(400).json({ success: false, error: 'ประเภทการลาไม่ถูกต้อง' });
+    }
+
+    if (!leaveImage) {
+      return res.status(400).json({
+        success: false,
+        error: leaveType === 'sick_leave'
+          ? 'กรุณาแนบรูปแชตแจ้งครูที่ปรึกษา'
+          : 'กรุณาแนบรูปใบลากิจ'
+      });
+    }
+
+    // ---- 2. ตรวจสอบนักเรียน ----
+    const studentResult = await pool.query(
+      'SELECT id, name, student_code FROM students WHERE line_user_id = $1',
+      [lineUserId]
+    );
+    if (studentResult.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'ไม่พบข้อมูลนักเรียน กรุณาลงทะเบียนก่อน' });
+    }
+    const student = studentResult.rows[0];
+
+    // ---- 3. ตรวจสอบ QR Token ----
+    const qrResult = await validateQRToken(token);
+    if (!qrResult.valid) {
+      return res.status(400).json({ success: false, error: qrResult.error });
+    }
+    const session = qrResult.session;
+
+    // ---- 4. ตรวจสอบว่าแจ้งลาซ้ำหรือไม่ ----
+    const duplicate = await pool.query(
+      'SELECT id FROM attendance_records WHERE student_id = $1 AND qr_session_id = $2',
+      [student.id, session.id]
+    );
+    if (duplicate.rows.length > 0) {
+      return res.status(409).json({ success: false, error: 'คุณเช็คชื่อ/แจ้งลาไปแล้ว' });
+    }
+
+    // ---- 5. บันทึกการลา ----
+    const leaveLabel = leaveType === 'sick_leave' ? 'ลาป่วย' : 'ลากิจ';
+    const checkedAt = new Date();
+    const checkedAtStr = checkedAt.toLocaleTimeString('th-TH', {
+      hour: '2-digit', minute: '2-digit', second: '2-digit'
+    });
+
+    const record = await pool.query(
+      `INSERT INTO attendance_records
+        (student_id, qr_session_id, check_type, status, remark, leave_image, is_manual, checked_at)
+       VALUES ($1, $2, $3, $4, $5, $6, FALSE, $7)
+       RETURNING id`,
+      [
+        student.id, session.id, session.qr_type,
+        leaveType,
+        remark || leaveLabel,
+        leaveImage,  // เก็บ base64 image ใน DB (หรือจะเปลี่ยนเป็น upload file storage ทีหลัง)
+        checkedAt
+      ]
+    );
+
+    // ---- 6. แจ้งครูผู้สอน ----
+    const teacherResult = await pool.query(
+      'SELECT line_user_id FROM teachers WHERE id = $1',
+      [session.teacher_id]
+    );
+    if (teacherResult.rows.length > 0 && teacherResult.rows[0].line_user_id) {
+      try {
+        await notifyTeacher(teacherResult.rows[0].line_user_id, {
+          studentName: student.name,
+          subjectName: session.subject_name,
+          checkType: 'leave',
+          status: leaveType,
+          remark: remark || ''
+        });
+      } catch (notifyErr) {
+        console.warn('Notify teacher failed:', notifyErr.message);
+      }
+    }
+
+    // ---- 7. บันทึก Log ----
+    await pool.query(
+      `INSERT INTO system_logs (event_type, event_data, student_id)
+       VALUES ('leave_request', $1, $2)`,
+      [
+        JSON.stringify({
+          leave_type: leaveType,
+          subject: session.subject_name,
+          token: session.token,
+          remark: remark || '',
+          has_image: !!leaveImage
+        }),
+        student.id
+      ]
+    );
+
+    // ---- 8. ส่งผลลัพธ์ ----
+    res.json({
+      success: true,
+      record: {
+        id: record.rows[0].id,
+        checkType: session.qr_type,
+        status: leaveType,
+        subjectName: session.subject_name,
+        checkedAt: checkedAtStr,
+        leaveType,
+        leaveLabel
+      }
+    });
+
+  } catch (err) {
+    console.error('Leave request error:', err);
+    res.status(500).json({ success: false, error: 'เกิดข้อผิดพลาด กรุณาลองใหม่' });
+  }
+});
+
+// ============================================================
 // GET /api/liff/seed-students - เพิ่มนักเรียนจาก RMS (รันครั้งเดียว)
 // ============================================================
 router.get('/seed-students', async (req, res) => {
@@ -595,4 +723,3 @@ router.get('/test-qr', async (req, res) => {
 });
 
 module.exports = { liffApiRouter: router };
-
