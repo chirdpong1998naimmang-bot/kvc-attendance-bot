@@ -72,8 +72,28 @@ router.delete('/schedules/:id', async (req, res) => {
 
 router.get('/students', async (req, res) => {
   try {
-    const result = await pool.query("SELECT id, student_code, name, group_name, line_user_id FROM students WHERE is_active = TRUE ORDER BY student_code");
-    res.json(result.rows.map(r => ({ id: r.id, studentId: r.student_code, name: r.name, section: r.group_name, department: 'การบัญชี', lineUserId: r.line_user_id || '' })));
+    const result = await pool.query("SELECT id, student_code, name, group_name, education_level, line_user_id FROM students WHERE is_active = TRUE ORDER BY student_code");
+    res.json(result.rows.map(r => {
+      const nameParts = (r.name || '').split(' ');
+      const title = nameParts[0] && (nameParts[0].startsWith('นาย') || nameParts[0].startsWith('นาง')) ? nameParts[0] : '';
+      const firstName = title ? nameParts.slice(1, -1).join(' ') || nameParts[1] || '' : nameParts[0] || '';
+      const lastName = nameParts[nameParts.length - 1] || '';
+      return {
+        id: r.id,
+        student_id: r.student_code,
+        studentId: r.student_code,
+        name: r.name,
+        title: title,
+        first_name: firstName,
+        last_name: lastName,
+        level: r.education_level || 'ปวช.',
+        year: '2',
+        section: r.group_name,
+        department: 'การบัญชี',
+        line_user_id: r.line_user_id || '',
+        lineUserId: r.line_user_id || ''
+      };
+    }));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
