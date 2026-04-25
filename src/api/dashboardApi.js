@@ -379,4 +379,57 @@ router.put('/classrooms/:id', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ═══════════════════════════════════════════════
+// FACE REGISTRATIONS (ดูสถานะ + ลงทะเบียนโดยครู + ลบ)
+// ═══════════════════════════════════════════════
+
+// GET /api/face-registrations — ดึงข้อมูลใบหน้าทั้งหมด
+router.get('/face-registrations', async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT fe.student_id, fe.photo_url, fe.created_at
+       FROM face_embeddings fe
+       WHERE fe.is_active = TRUE
+       ORDER BY fe.created_at DESC`
+    );
+    res.json(result.rows);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/face-register — ครูลงทะเบียนใบหน้าให้นักเรียน (ส่ง photo base64)
+router.post('/face-register', async (req, res) => {
+  try {
+    const { student_id, photo } = req.body;
+    if (!student_id || !photo) {
+      return res.status(400).json({ error: 'กรุณาเลือกนักเรียนและถ่ายรูป' });
+    }
+
+    // ลบ embedding เก่า
+    await pool.query(
+      'UPDATE face_embeddings SET is_active = FALSE WHERE student_id = $1',
+      [student_id]
+    );
+
+    // บันทึกใหม่ (ไม่มี embedding เพราะครูถ่ายให้ — นักเรียนจะสร้าง embedding ตอนเปิด LIFF)
+    await pool.query(
+      `INSERT INTO face_embeddings (student_id, photo_url, is_active, created_at)
+       VALUES ($1, $2, TRUE, NOW())`,
+      [student_id, photo]
+    );
+
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// DELETE /api/face-registrations/:studentId — ลบข้อมูลใบหน้า
+router.delete('/face-registrations/:studentId', async (req, res) => {
+  try {
+    await pool.query(
+      'UPDATE face_embeddings SET is_active = FALSE WHERE student_id = $1',
+      [req.params.studentId]
+    );
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 module.exports = { dashboardApiRouter: router };
