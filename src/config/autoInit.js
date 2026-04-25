@@ -33,6 +33,13 @@ async function runMigrations() {
     `);
     console.log('  ✓ leave_image column');
 
+    // 3.6 เพิ่มคอลัมน์ schedule_id (ผูกกับตารางสอน)
+    await client.query(`
+      ALTER TABLE attendance_records
+      ADD COLUMN IF NOT EXISTS schedule_id INTEGER
+    `);
+    console.log('  ✓ schedule_id column');
+
     // 4. อนุญาตให้ qr_session_id เป็น NULL (สำหรับ manual entry)
     const colCheck = await client.query(`
       SELECT is_nullable FROM information_schema.columns
