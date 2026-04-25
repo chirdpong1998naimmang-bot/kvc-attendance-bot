@@ -31,6 +31,12 @@ router.post('/register', async (req, res) => {
       return res.status(404).json({ error: `ไม่พบรหัส ${studentCode} ในระบบ กรุณาติดต่อครูเพื่อเพิ่มรหัสก่อน` });
     }
 
+    // ลบ line_user_id เก่าจากนักเรียนคนอื่น (ถ้ามี)
+    await pool.query(
+      'UPDATE students SET line_user_id = NULL WHERE line_user_id = $1 AND student_code != $2',
+      [lineUserId, studentCode]
+    );
+
     // อัปเดต LINE User ID
     await pool.query(
       'UPDATE students SET line_user_id = $1, updated_at = NOW() WHERE student_code = $2',
