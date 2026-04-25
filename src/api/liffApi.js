@@ -28,7 +28,7 @@ router.post('/register', async (req, res) => {
     );
 
     if (student.rows.length === 0) {
-      return res.status(404).json({ error: 'ไม่พบรหัสนักศึกษานี้ในระบบ' });
+      return res.status(404).json({ error: `ไม่พบรหัส ${studentCode} ในระบบ กรุณาติดต่อครูเพื่อเพิ่มรหัสก่อน` });
     }
 
     // อัปเดต LINE User ID
@@ -47,8 +47,8 @@ router.post('/register', async (req, res) => {
       }
     });
   } catch (err) {
-    console.error('Register error:', err);
-    res.status(500).json({ error: 'เกิดข้อผิดพลาด กรุณาลองใหม่' });
+    console.error('Register error:', err.message);
+    res.status(500).json({ error: 'ลงทะเบียนไม่สำเร็จ: ' + err.message });
   }
 });
 
