@@ -69,7 +69,17 @@ router.get('/profile/:lineUserId', async (req, res) => {
       return res.status(404).json({ registered: false });
     }
 
-    res.json({ registered: true, student: student.rows[0] });
+    // ตรวจว่าลงทะเบียนใบหน้าแล้วหรือยัง
+    const faceCheck = await pool.query(
+      'SELECT id FROM face_embeddings WHERE student_id = $1 AND is_active = TRUE LIMIT 1',
+      [student.rows[0].id]
+    );
+
+    res.json({
+      registered: true,
+      student: student.rows[0],
+      faceRegistered: faceCheck.rows.length > 0
+    });
   } catch (err) {
     console.error('Profile error:', err);
     res.status(500).json({ error: 'เกิดข้อผิดพลาด' });
@@ -557,6 +567,90 @@ router.post('/leave-request', async (req, res) => {
   } catch (err) {
     console.error('Leave request error:', err);
     res.status(500).json({ success: false, error: 'เกิดข้อผิดพลาด กรุณาลองใหม่' });
+  }
+});
+
+// ============================================================
+// POST /api/liff/face/register - ลงทะเบียนใบหน้า (เก็บ embedding)
+// ============================================================
+router.post('/face/register', async (req, res) => {
+  try {
+    const { lineUserId, embedding, photo } = req.body;
+
+    if (!lineUserId || !embedding) {
+      return res.status(400).json({ success: false, error: 'ข้อมูลไม่ครบ' });
+    }
+
+    // หานักเรียน
+    const student = await pool.query(
+      'SELECT id, name FROM students WHERE line_user_id = $1',
+      [lineUserId]
+    );
+    if (student.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'ไม่พบข้อมูลนักเรียน' });
+    }
+    const studentId = student.rows[0].id;
+
+    // ลบ embedding เก่า (ถ้ามี) แล้วใส่ใหม่
+    await pool.query(
+      'UPDATE face_embeddings SET is_active = FALSE WHERE student_id = $1',
+      [studentId]
+    );
+
+    // บันทึก embedding ใหม่
+    await pool.query(
+      `INSERT INTO face_embeddings (student_id, embedding_data, photo_url, is_active, created_at)
+       VALUES ($1, $2, $3, TRUE, NOW())`,
+      [studentId, JSON.stringify(embedding), photo || null]
+    );
+
+    // บันทึก log
+    await pool.query(
+      `INSERT INTO system_logs (event_type, event_data, student_id)
+       VALUES ('face_registered', $1, $2)`,
+      [JSON.stringify({ student_name: student.rows[0].name }), studentId]
+    );
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Face register error:', err);
+    res.status(500).json({ success: false, error: 'เกิดข้อผิดพลาด กรุณาลองใหม่' });
+  }
+});
+
+// ============================================================
+// GET /api/liff/face/embedding/:lineUserId - ดึง embedding สำหรับเปรียบเทียบ
+// ============================================================
+router.get('/face/embedding/:lineUserId', async (req, res) => {
+  try {
+    const { lineUserId } = req.params;
+
+    const student = await pool.query(
+      'SELECT id FROM students WHERE line_user_id = $1',
+      [lineUserId]
+    );
+    if (student.rows.length === 0) {
+      return res.status(404).json({ error: 'ไม่พบนักเรียน' });
+    }
+
+    const face = await pool.query(
+      'SELECT embedding_data FROM face_embeddings WHERE student_id = $1 AND is_active = TRUE ORDER BY created_at DESC LIMIT 1',
+      [student.rows[0].id]
+    );
+
+    if (face.rows.length === 0) {
+      return res.status(404).json({ error: 'ยังไม่ได้ลงทะเบียนใบหน้า', registered: false });
+    }
+
+    // embedding_data เก็บเป็น JSON string → parse กลับ
+    const embedding = typeof face.rows[0].embedding_data === 'string'
+      ? JSON.parse(face.rows[0].embedding_data)
+      : face.rows[0].embedding_data;
+
+    res.json({ embedding, registered: true });
+  } catch (err) {
+    console.error('Face embedding error:', err);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาด' });
   }
 });
 
