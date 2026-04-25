@@ -33,12 +33,19 @@ async function runMigrations() {
     `);
     console.log('  ✓ leave_image column');
 
-    // 3.6 เพิ่มคอลัมน์ schedule_id (ผูกกับตารางสอน)
+    // 3.6 เพิ่มคอลัมน์ schedule_id (ผูกกับตารางสอน — ใช้ UUID)
     await client.query(`
       ALTER TABLE attendance_records
-      ADD COLUMN IF NOT EXISTS schedule_id INTEGER
+      ADD COLUMN IF NOT EXISTS schedule_id UUID
     `);
-    console.log('  ✓ schedule_id column');
+    // แก้ type กรณีเคยสร้างเป็น INTEGER
+    try {
+      await client.query(`
+        ALTER TABLE attendance_records
+        ALTER COLUMN schedule_id TYPE UUID USING NULL
+      `);
+    } catch (e) { /* already UUID */ }
+    console.log('  ✓ schedule_id column (UUID)');
 
     // 4. อนุญาตให้ qr_session_id เป็น NULL (สำหรับ manual entry)
     const colCheck = await client.query(`
