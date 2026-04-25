@@ -158,11 +158,29 @@ router.post('/students', async (req, res) => {
     const fullName = name || ((title || '') + (first_name || '') + ' ' + (last_name || '')).trim();
     if (!code || !fullName) return res.status(400).json({ error: 'กรุณากรอกรหัสและชื่อ' });
     const groupName = section ? (level || 'ปวช.') + year + '/' + section : 'ปวช.2/1';
+
+    // ตรวจว่ามีอยู่แล้วหรือไม่ (รวม soft-deleted)
+    const existing = await pool.query(
+      "SELECT id, is_active FROM students WHERE student_code = $1",
+      [code]
+    );
+
+    if (existing.rows.length > 0) {
+      if (!existing.rows[0].is_active) {
+        // เคยถูกลบ → reactivate + อัปเดตข้อมูลใหม่
+        await pool.query(
+          "UPDATE students SET name = $1, group_name = $2, education_level = $3, is_active = TRUE, updated_at = NOW() WHERE student_code = $4",
+          [fullName, groupName, level || 'ปวช.', code]
+        );
+        return res.json({ success: true, id: existing.rows[0].id, reactivated: true });
+      }
+      return res.status(409).json({ error: 'รหัสนักเรียนซ้ำ' });
+    }
+
     const result = await pool.query(
-      "INSERT INTO students (student_code, name, group_name, education_level) VALUES ($1, $2, $3, $4) ON CONFLICT (student_code) DO NOTHING RETURNING id",
+      "INSERT INTO students (student_code, name, group_name, education_level) VALUES ($1, $2, $3, $4) RETURNING id",
       [code, fullName, groupName, level || 'ปวช.']
     );
-    if (result.rows.length === 0) return res.status(409).json({ error: 'รหัสนักเรียนซ้ำ' });
     res.json({ success: true, id: result.rows[0].id });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
