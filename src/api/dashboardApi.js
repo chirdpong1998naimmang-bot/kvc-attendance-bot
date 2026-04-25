@@ -224,11 +224,13 @@ router.get('/attendance', async (req, res) => {
               ar.checked_at AT TIME ZONE 'Asia/Bangkok' AS checked_at_th,
               ar.face_confidence,
               ar.remark, ar.is_manual,
-              sub.subject_name
+              COALESCE(sub1.subject_name, sub2.subject_name) AS subject_name
        FROM attendance_records ar
        JOIN students st ON ar.student_id = st.id
        LEFT JOIN qr_sessions qs ON ar.qr_session_id = qs.id
-       LEFT JOIN subjects sub ON qs.subject_id = sub.id
+       LEFT JOIN subjects sub1 ON qs.subject_id = sub1.id
+       LEFT JOIN schedules sch ON ar.schedule_id = sch.id
+       LEFT JOIN subjects sub2 ON sch.subject_id = sub2.id
        WHERE DATE(ar.checked_at AT TIME ZONE 'Asia/Bangkok') = $1
        ORDER BY ar.checked_at DESC`, [date]
     );
