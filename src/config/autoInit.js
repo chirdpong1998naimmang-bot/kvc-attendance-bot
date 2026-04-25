@@ -91,6 +91,21 @@ async function runMigrations() {
     `);
     console.log('  ✓ semester / academic_year columns');
 
+    // เพิ่มคอลัมน์ใน face_embeddings (ถ้ายังไม่มี)
+    await client.query(`
+      ALTER TABLE face_embeddings
+      ADD COLUMN IF NOT EXISTS embedding_data TEXT
+    `);
+    await client.query(`
+      ALTER TABLE face_embeddings
+      ADD COLUMN IF NOT EXISTS photo_url TEXT
+    `);
+    await client.query(`
+      ALTER TABLE face_embeddings
+      ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE
+    `);
+    console.log('  ✓ face_embeddings columns');
+
     // เติมค่าเริ่มต้นจาก period_times (ถ้ายังเป็น NULL)
     await client.query(`
       UPDATE schedules s
