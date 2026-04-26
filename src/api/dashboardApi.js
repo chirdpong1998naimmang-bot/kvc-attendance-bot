@@ -478,4 +478,215 @@ router.delete('/face-registrations/:studentId', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ═══════════════════════════════════════════════
+// REPORT — รายงานสรุปการเช็คชื่อแยกตามวิชา/กลุ่มเรียน/รายวัน
+// ═══════════════════════════════════════════════
+
+// GET /api/report/filters — ดึงรายการวิชาและกลุ่มเรียนสำหรับ dropdown
+router.get('/report/filters', async (req, res) => {
+  try {
+    const subjects = await pool.query(
+      `SELECT DISTINCT sub.id, sub.subject_code, sub.subject_name
+       FROM schedules s
+       JOIN subjects sub ON s.subject_id = sub.id
+       WHERE s.is_active = TRUE
+       ORDER BY sub.subject_code`
+    );
+    const sections = await pool.query(
+      `SELECT DISTINCT COALESCE(s.section, 'ปวช.2/1') AS section
+       FROM schedules s
+       WHERE s.is_active = TRUE
+       ORDER BY section`
+    );
+    res.json({
+      subjects: subjects.rows,
+      sections: sections.rows.map(r => r.section)
+    });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /api/report/attendance?subject_id=1&section=ปวช.2/1&date_from=2026-01-01&date_to=2026-04-26
+router.get('/report/attendance', async (req, res) => {
+  try {
+    const { subject_id, section, date_from, date_to } = req.query;
+
+    if (!subject_id) {
+      return res.status(400).json({ error: 'กรุณาเลือกวิชา' });
+    }
+
+    // ---- 1. ดึง schedules ของวิชานี้ (เพื่อคำนวณชั่วโมง) ----
+    const schedResult = await pool.query(
+      `SELECT s.id, s.day_of_week, s.start_period, s.end_period,
+              COALESCE(s.section, 'ปวช.2/1') AS section,
+              sub.subject_name, sub.subject_code
+       FROM schedules s
+       JOIN subjects sub ON s.subject_id = sub.id
+       WHERE s.subject_id = $1 AND s.is_active = TRUE
+       ${section ? "AND COALESCE(s.section, 'ปวช.2/1') = $2" : ''}
+       ORDER BY s.day_of_week, s.start_period`,
+      section ? [subject_id, section] : [subject_id]
+    );
+
+    if (schedResult.rows.length === 0) {
+      return res.status(404).json({ error: 'ไม่พบตารางสอนของวิชานี้' });
+    }
+
+    const schedules = schedResult.rows;
+    const scheduleIds = schedules.map(s => s.id);
+    const subjectInfo = { code: schedules[0].subject_code, name: schedules[0].subject_name };
+
+    // คำนวณชั่วโมงต่อ schedule (จำนวน period = end - start + 1)
+    const hoursPerSchedule = {};
+    const dayScheduleMap = {}; // day_of_week → [schedule_ids]
+    schedules.forEach(s => {
+      const hours = (s.end_period - s.start_period + 1);
+      hoursPerSchedule[s.id] = hours;
+      if (!dayScheduleMap[s.day_of_week]) dayScheduleMap[s.day_of_week] = [];
+      dayScheduleMap[s.day_of_week].push(s.id);
+    });
+
+    // ---- 2. ดึงรายชื่อนักเรียนในกลุ่ม ----
+    const sectionFilter = section || schedules[0].section || 'ปวช.2/1';
+    const studentsResult = await pool.query(
+      `SELECT id, student_code, name, group_name
+       FROM students
+       WHERE is_active = TRUE AND COALESCE(group_name, 'ปวช.2/1') = $1
+       ORDER BY student_code`,
+      [sectionFilter]
+    );
+    const students = studentsResult.rows;
+
+    // ---- 3. ดึง attendance records ทั้งหมดในช่วงเวลา ----
+    let dateCondition = '';
+    const params = [scheduleIds];
+    let paramIndex = 2;
+
+    if (date_from) {
+      dateCondition += ` AND DATE(ar.checked_at AT TIME ZONE 'Asia/Bangkok') >= $${paramIndex}`;
+      params.push(date_from);
+      paramIndex++;
+    }
+    if (date_to) {
+      dateCondition += ` AND DATE(ar.checked_at AT TIME ZONE 'Asia/Bangkok') <= $${paramIndex}`;
+      params.push(date_to);
+      paramIndex++;
+    }
+
+    const attendResult = await pool.query(
+      `SELECT ar.student_id, ar.schedule_id, ar.status,
+              DATE(ar.checked_at AT TIME ZONE 'Asia/Bangkok') AS attend_date,
+              ar.checked_at AT TIME ZONE 'Asia/Bangkok' AS checked_at_th,
+              ar.remark
+       FROM attendance_records ar
+       WHERE ar.schedule_id = ANY($1)
+       ${dateCondition}
+       ORDER BY ar.checked_at`,
+      params
+    );
+
+    // ---- 4. จัดกลุ่มข้อมูลเป็นรายวัน ----
+    // สร้าง map: date → { student_id → { status, time, remark, schedule_id } }
+    const dailyMap = {};
+    attendResult.rows.forEach(r => {
+      const dateStr = r.attend_date instanceof Date
+        ? r.attend_date.toISOString().slice(0, 10)
+        : String(r.attend_date).slice(0, 10);
+
+      if (!dailyMap[dateStr]) dailyMap[dateStr] = {};
+      // ถ้ามีหลาย record ต่อวัน ใช้ตัวล่าสุด
+      dailyMap[dateStr][r.student_id] = {
+        status: r.status,
+        statusLabel: STATUS_LABELS[r.status] || r.status,
+        time: r.checked_at_th
+          ? new Date(r.checked_at_th).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bangkok' })
+          : '-',
+        remark: r.remark || '',
+        schedule_id: r.schedule_id
+      };
+    });
+
+    // ---- 5. สร้าง daily report (เรียงตามวันที่) ----
+    const sortedDates = Object.keys(dailyMap).sort();
+    const dailyReport = sortedDates.map(dateStr => {
+      const d = new Date(dateStr + 'T00:00:00+07:00');
+      const dayOfWeek = d.getDay();
+      const dayName = DAYS_TH[dayOfWeek];
+
+      // หาจำนวนชั่วโมงของวันนี้ (จาก schedule ที่ตรงกับวัน)
+      const daySchedules = dayScheduleMap[dayOfWeek] || [];
+      const hoursToday = daySchedules.reduce((sum, sid) => sum + (hoursPerSchedule[sid] || 0), 0);
+
+      // สร้างรายชื่อนักเรียน + สถานะ
+      const studentStatuses = students.map(st => {
+        const record = dailyMap[dateStr]?.[st.id];
+        return {
+          student_id: st.id,
+          student_code: st.student_code,
+          name: st.name,
+          status: record?.status || 'absent',
+          statusLabel: record?.statusLabel || 'ขาด',
+          time: record?.time || '-',
+          remark: record?.remark || ''
+        };
+      });
+
+      return {
+        date: dateStr,
+        dayOfWeek: dayName,
+        hoursToday,
+        students: studentStatuses
+      };
+    });
+
+    // ---- 6. สรุปชั่วโมงรวมของแต่ละนักเรียน ----
+    const studentSummary = students.map(st => {
+      let totalHours = 0;
+      let presentHours = 0;
+      let lateHours = 0;
+      let absentHours = 0;
+      let sickLeaveHours = 0;
+      let personalLeaveHours = 0;
+
+      dailyReport.forEach(day => {
+        const record = day.students.find(s => s.student_id === st.id);
+        const hours = day.hoursToday;
+        totalHours += hours;
+
+        switch (record?.status) {
+          case 'present': presentHours += hours; break;
+          case 'late': lateHours += hours; break;
+          case 'sick_leave': sickLeaveHours += hours; break;
+          case 'personal_leave': personalLeaveHours += hours; break;
+          default: absentHours += hours; break;
+        }
+      });
+
+      return {
+        student_id: st.id,
+        student_code: st.student_code,
+        name: st.name,
+        totalHours,
+        presentHours,
+        lateHours,
+        absentHours,
+        sickLeaveHours,
+        personalLeaveHours,
+        attendanceRate: totalHours > 0 ? Math.round((presentHours + lateHours) / totalHours * 100 * 10) / 10 : 0
+      };
+    });
+
+    res.json({
+      subject: subjectInfo,
+      section: sectionFilter,
+      dateRange: { from: date_from || sortedDates[0] || '', to: date_to || sortedDates[sortedDates.length - 1] || '' },
+      totalDays: dailyReport.length,
+      dailyReport,
+      studentSummary
+    });
+  } catch (err) {
+    console.error('Report error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = { dashboardApiRouter: router };
