@@ -104,6 +104,25 @@ router.post('/validate-qr', async (req, res) => {
     }
 
     const result = await validateQRToken(token);
+
+    // ถ้า valid → ดึงพิกัดห้องเรียนจาก schedule เพิ่มให้ LIFF ใช้ตรวจ GPS
+    if (result.valid && result.session?.schedule_id) {
+      const crResult = await pool.query(
+        `SELECT c.latitude, c.longitude, c.allowed_radius_m
+         FROM schedules s
+         JOIN classrooms c ON s.classroom_id = c.id
+         WHERE s.id = $1`,
+        [result.session.schedule_id]
+      );
+      if (crResult.rows.length > 0) {
+        result.session.classroom = {
+          latitude: parseFloat(crResult.rows[0].latitude),
+          longitude: parseFloat(crResult.rows[0].longitude),
+          allowed_radius_m: parseFloat(crResult.rows[0].allowed_radius_m) || 100
+        };
+      }
+    }
+
     res.json(result);
   } catch (err) {
     console.error('Validate QR error:', err);
