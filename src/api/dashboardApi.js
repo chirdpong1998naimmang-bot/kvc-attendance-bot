@@ -57,10 +57,9 @@ router.get('/schedules', async (req, res) => {
 
 router.post('/schedules', async (req, res) => {
   try {
-    const { subject_id, classroom_id, line_group_id, teacher_id, day_of_week, start_time, end_time, auto_send } = req.body;
+    const { subject_id, classroom_id, line_group_id, teacher_id, day_of_week, start_time, end_time, auto_send, subject_code, subject_name, section, room, teacher_name, semester, academic_year } = req.body;
     const dayIndex = typeof day_of_week === 'number' ? day_of_week : DAYS_TH.indexOf(day_of_week);
 
-    // พยายาม match กับ period number (ถ้าตรง)
     const startP = Object.entries(PERIOD_TIMES).find(([,v]) => v.s === start_time)?.[0] || 1;
     const endP = Object.entries(PERIOD_TIMES).find(([,v]) => v.e === end_time)?.[0] || 2;
 
@@ -68,10 +67,55 @@ router.post('/schedules', async (req, res) => {
       return res.status(400).json({ error: 'วันไม่ถูกต้อง' });
     }
 
+    // หา subject_id จาก subject_code (ถ้าไม่ได้ส่ง subject_id มา)
+    let subId = subject_id;
+    if (!subId && subject_code) {
+      const subResult = await pool.query('SELECT id FROM subjects WHERE subject_code = $1', [subject_code]);
+      if (subResult.rows.length > 0) {
+        subId = subResult.rows[0].id;
+      } else if (subject_name) {
+        // สร้างวิชาใหม่
+        const newSub = await pool.query(
+          'INSERT INTO subjects (subject_code, subject_name) VALUES ($1, $2) RETURNING id',
+          [subject_code, subject_name]
+        );
+        subId = newSub.rows[0].id;
+      }
+    }
+    if (!subId) return res.status(400).json({ error: 'ไม่พบรหัสวิชา กรุณาตรวจสอบ' });
+
+    // หา classroom_id จาก room_name (ถ้าไม่ได้ส่ง classroom_id มา)
+    let classId = classroom_id;
+    if (!classId && room) {
+      const classResult = await pool.query('SELECT id FROM classrooms WHERE room_name = $1 AND is_active = TRUE', [room]);
+      if (classResult.rows.length > 0) classId = classResult.rows[0].id;
+    }
+    if (!classId) return res.status(400).json({ error: 'ไม่พบห้องเรียน กรุณาเพิ่มห้องในแท็บพิกัดห้องก่อน' });
+
+    // หา teacher_id จาก teacher_name หรือใช้คนแรก
+    let teachId = teacher_id;
+    if (!teachId) {
+      if (teacher_name) {
+        const tResult = await pool.query('SELECT id FROM teachers WHERE name ILIKE $1', [`%${teacher_name}%`]);
+        if (tResult.rows.length > 0) teachId = tResult.rows[0].id;
+      }
+      if (!teachId) {
+        const tFirst = await pool.query('SELECT id FROM teachers LIMIT 1');
+        if (tFirst.rows.length > 0) teachId = tFirst.rows[0].id;
+      }
+    }
+
+    // หา line_group_id (ใช้กลุ่มแรกที่มี)
+    let lgId = line_group_id;
+    if (!lgId) {
+      const lgResult = await pool.query('SELECT id FROM line_groups LIMIT 1');
+      if (lgResult.rows.length > 0) lgId = lgResult.rows[0].id;
+    }
+
     const result = await pool.query(
-      `INSERT INTO schedules (teacher_id, subject_id, classroom_id, line_group_id, day_of_week, start_period, end_period, custom_start_time, custom_end_time, auto_send)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
-      [teacher_id || 1, subject_id, classroom_id, line_group_id, dayIndex, startP, endP, start_time || null, end_time || null, auto_send !== false]
+      `INSERT INTO schedules (teacher_id, subject_id, classroom_id, line_group_id, day_of_week, start_period, end_period, custom_start_time, custom_end_time, semester, academic_year, auto_send)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
+      [teachId, subId, classId, lgId, dayIndex, startP, endP, start_time || null, end_time || null, semester || null, academic_year || null, auto_send !== false]
     );
     res.json({ success: true, id: result.rows[0].id });
   } catch (err) { res.status(500).json({ error: err.message }); }
