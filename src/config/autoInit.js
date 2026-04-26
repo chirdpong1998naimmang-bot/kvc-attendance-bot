@@ -103,7 +103,12 @@ async function runMigrations() {
       ALTER TABLE schedules
       ADD COLUMN IF NOT EXISTS academic_year VARCHAR(10)
     `);
-    console.log('  ✓ semester / academic_year columns');
+    // เพิ่ม section (กลุ่มเรียน)
+    await client.query(`
+      ALTER TABLE schedules
+      ADD COLUMN IF NOT EXISTS section VARCHAR(50)
+    `);
+    console.log('  ✓ semester / academic_year / section columns');
 
     // เพิ่มคอลัมน์ใน face_embeddings (ถ้ายังไม่มี)
     await client.query(`
