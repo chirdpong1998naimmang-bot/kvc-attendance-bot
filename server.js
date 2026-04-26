@@ -47,8 +47,9 @@ app.use('/webhook', lineWebhookRouter);
 
 // LIFF API - ใช้ JSON body
 app.use('/api/liff', express.json({ limit: '10mb' }), liffApiRouter);
-app.use('/api', express.json({ limit: '10mb' }), dashboardApiRouter);
 app.use('/api/report', express.json({ limit: '10mb' }), reportApiRouter);
+app.use('/api', express.json({ limit: '10mb' }), dashboardApiRouter);
+
 
 // Health check
 app.get('/health', async (req, res) => {
