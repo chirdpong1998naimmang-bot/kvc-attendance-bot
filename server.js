@@ -11,6 +11,7 @@ const cors = require('cors');
 const { lineWebhookRouter } = require('./src/webhook/lineWebhook');
 const { liffApiRouter } = require('./src/api/liffApi');
 const { dashboardApiRouter } = require('./src/api/dashboardApi');
+const { reportApiRouter } = require('./src/api/reportApi');
 const { startScheduler } = require('./src/services/scheduleService');
 const { pool, testConnection } = require('./src/config/database');
 
@@ -47,6 +48,7 @@ app.use('/webhook', lineWebhookRouter);
 // LIFF API - ใช้ JSON body
 app.use('/api/liff', express.json({ limit: '10mb' }), liffApiRouter);
 app.use('/api', express.json({ limit: '10mb' }), dashboardApiRouter);
+app.use('/api/report', express.json({ limit: '10mb' }), reportApiRouter);
 
 // Health check
 app.get('/health', async (req, res) => {
