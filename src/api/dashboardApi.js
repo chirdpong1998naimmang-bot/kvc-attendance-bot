@@ -26,7 +26,7 @@ router.get('/schedules', async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT s.id, s.day_of_week, s.start_period, s.end_period, s.auto_send,
-              s.custom_start_time, s.custom_end_time, s.semester, s.academic_year,
+              s.custom_start_time, s.custom_end_time, s.semester, s.academic_year, s.section,
               sub.subject_name, sub.subject_code,
               c.room_name, lg.group_name, t.name AS teacher_name
        FROM schedules s
@@ -41,7 +41,7 @@ router.get('/schedules', async (req, res) => {
       id: r.id,
       subject_code: r.subject_code,
       subject_name: r.subject_name,
-      section: 'ปวช.2/1',
+      section: r.section || 'ปวช.2/1',
       day_of_week: DAYS_TH[r.day_of_week],
       start_time: r.custom_start_time || PERIOD_TIMES[r.start_period]?.s || '',
       end_time: r.custom_end_time || PERIOD_TIMES[r.end_period]?.e || '',
@@ -113,9 +113,9 @@ router.post('/schedules', async (req, res) => {
     }
 
     const result = await pool.query(
-      `INSERT INTO schedules (teacher_id, subject_id, classroom_id, line_group_id, day_of_week, start_period, end_period, custom_start_time, custom_end_time, semester, academic_year, auto_send)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
-      [teachId, subId, classId, lgId, dayIndex, startP, endP, start_time || null, end_time || null, semester || null, academic_year || null, auto_send !== false]
+      `INSERT INTO schedules (teacher_id, subject_id, classroom_id, line_group_id, day_of_week, start_period, end_period, custom_start_time, custom_end_time, semester, academic_year, section, auto_send)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id`,
+      [teachId, subId, classId, lgId, dayIndex, startP, endP, start_time || null, end_time || null, semester || null, academic_year || null, section || null, auto_send !== false]
     );
     res.json({ success: true, id: result.rows[0].id });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -147,11 +147,11 @@ router.put('/schedules/:id', async (req, res) => {
       );
     }
 
-    // อัปเดตภาคเรียน / ปีการศึกษา
-    if (semester !== undefined || academic_year !== undefined) {
+    // อัปเดตภาคเรียน / ปีการศึกษา / กลุ่มเรียน
+    if (semester !== undefined || academic_year !== undefined || section !== undefined) {
       await pool.query(
-        "UPDATE schedules SET semester = COALESCE($1, semester), academic_year = COALESCE($2, academic_year) WHERE id = $3",
-        [semester || null, academic_year || null, req.params.id]
+        "UPDATE schedules SET semester = COALESCE($1, semester), academic_year = COALESCE($2, academic_year), section = COALESCE($3, section) WHERE id = $4",
+        [semester || null, academic_year || null, section || null, req.params.id]
       );
     }
 
