@@ -155,7 +155,16 @@ async function fetchReportData({ subject_id, section, date_from, date_to, semest
   const dateSet = new Set();
   const defaultScheduleId = scheduleIds[0];
   attResult.rows.forEach(r => {
-    const dateStr = r.attend_date instanceof Date ? r.attend_date.toISOString().slice(0,10) : String(r.attend_date).slice(0,10);
+    // แปลงวันที่ให้ถูกต้อง — attend_date จาก PostgreSQL DATE อาจเลื่อนวันเมื่อแปลง timezone
+    let dateStr;
+    if (r.attend_date instanceof Date) {
+      const y = r.attend_date.getFullYear();
+      const m = String(r.attend_date.getMonth() + 1).padStart(2, '0');
+      const d = String(r.attend_date.getDate()).padStart(2, '0');
+      dateStr = `${y}-${m}-${d}`;
+    } else {
+      dateStr = String(r.attend_date).slice(0, 10);
+    }
     dateSet.add(dateStr);
     // ใช้ schedule_id จาก record หรือ fallback เป็น schedule แรก
     const sid = r.schedule_id || defaultScheduleId;
@@ -165,7 +174,7 @@ async function fetchReportData({ subject_id, section, date_from, date_to, semest
   const sortedDates = [...dateSet].sort();
   const columns = [];
   sortedDates.forEach(dateStr => {
-    const d = new Date(dateStr + 'T00:00:00+07:00');
+    const d = new Date(dateStr + 'T12:00:00+07:00');
     const dayOfWeek = d.getDay();
     const dayScheds = dayScheduleMap[dayOfWeek] || [];
     if (dayScheds.length === 0) {
