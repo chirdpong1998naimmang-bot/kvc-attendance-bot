@@ -78,6 +78,150 @@ router.get('/filters', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ── ฟังก์ชันกลาง: ดึงข้อมูลรายงานเช็คชื่อ ──
+async function fetchReportData({ subject_id, section, date_from, date_to, semester, academic_year }) {
+  const sectionFilter = section || 'ปวช.2/1';
+  const schedResult = await pool.query(
+    `SELECT s.id, s.day_of_week, s.start_period, s.end_period,
+            s.custom_start_time, s.custom_end_time,
+            s.semester, s.academic_year, s.section,
+            sub.subject_code, sub.subject_name,
+            t.name AS teacher_name
+     FROM schedules s
+     JOIN subjects sub ON s.subject_id = sub.id
+     LEFT JOIN teachers t ON s.teacher_id = t.id
+     WHERE s.subject_id = $1 AND s.is_active = TRUE
+       AND COALESCE(s.section, 'ปวช.2/1') = $2
+     ORDER BY s.day_of_week, s.start_period`,
+    [subject_id, sectionFilter]
+  );
+  if (schedResult.rows.length === 0) throw new Error('ไม่พบตารางสอนของวิชานี้');
+
+  const schedules = schedResult.rows;
+  const subjectCode = schedules[0].subject_code;
+  const subjectName = schedules[0].subject_name;
+  const teacherName = schedules[0].teacher_name || '';
+  const sem = semester || schedules[0].semester || '';
+  const acadYear = academic_year || schedules[0].academic_year || '';
+  const scheduleIds = schedules.map(s => s.id);
+
+  const dayScheduleMap = {};
+  schedules.forEach(s => {
+    if (!dayScheduleMap[s.day_of_week]) dayScheduleMap[s.day_of_week] = [];
+    dayScheduleMap[s.day_of_week].push({
+      id: s.id,
+      startTime: s.custom_start_time || periodToTime(s.start_period),
+      endTime: s.custom_end_time || periodToEndTime(s.end_period),
+      startPeriod: s.start_period,
+      endPeriod: s.end_period
+    });
+  });
+
+  const studentsResult = await pool.query(
+    `SELECT id, student_code, name, group_name FROM students
+     WHERE is_active = TRUE AND COALESCE(group_name, 'ปวช.2/1') = $1
+     ORDER BY student_code`,
+    [sectionFilter]
+  );
+  const students = studentsResult.rows;
+
+  let dateCondition = '';
+  const params = [scheduleIds];
+  let pi = 2;
+  if (date_from) { dateCondition += ` AND DATE(ar.checked_at AT TIME ZONE 'Asia/Bangkok') >= $${pi}`; params.push(date_from); pi++; }
+  if (date_to) { dateCondition += ` AND DATE(ar.checked_at AT TIME ZONE 'Asia/Bangkok') <= $${pi}`; params.push(date_to); pi++; }
+
+  const attResult = await pool.query(
+    `SELECT ar.student_id, ar.schedule_id, ar.status,
+            DATE(ar.checked_at AT TIME ZONE 'Asia/Bangkok') AS attend_date
+     FROM attendance_records ar
+     WHERE ar.schedule_id = ANY($1) ${dateCondition}
+     ORDER BY ar.checked_at`,
+    params
+  );
+
+  const attMap = {};
+  const dateSet = new Set();
+  attResult.rows.forEach(r => {
+    const dateStr = r.attend_date instanceof Date ? r.attend_date.toISOString().slice(0,10) : String(r.attend_date).slice(0,10);
+    dateSet.add(dateStr);
+    attMap[`${r.student_id}|${dateStr}|${r.schedule_id}`] = r.status;
+  });
+
+  const sortedDates = [...dateSet].sort();
+  const columns = [];
+  sortedDates.forEach(dateStr => {
+    const d = new Date(dateStr + 'T00:00:00+07:00');
+    const dayOfWeek = d.getDay();
+    const dayScheds = dayScheduleMap[dayOfWeek] || [];
+    if (dayScheds.length === 0) {
+      columns.push({ date: dateStr, scheduleId: scheduleIds[0], header: formatThaiDate(dateStr) });
+    } else {
+      dayScheds.forEach(ds => {
+        columns.push({
+          date: dateStr, scheduleId: ds.id,
+          header: `${formatThaiDate(dateStr)} ${ds.startTime.replace(':','.')} - ${ds.endTime.replace(':','.')}`
+        });
+      });
+    }
+  });
+
+  // สร้างตาราง matrix: นักเรียน × คอลัมน์วัน
+  const matrix = students.map((st, idx) => {
+    const fullName = st.name || '';
+    let firstName = fullName, lastName = '-';
+    for (const p of ['นางสาว','นาย','นาง']) {
+      if (fullName.startsWith(p)) {
+        const rest = fullName.slice(p.length).trim().split(' ');
+        firstName = p + (rest[0] || '');
+        lastName = rest.slice(1).join(' ') || '-';
+        break;
+      }
+    }
+    if (firstName === fullName) {
+      const parts = fullName.split(' ');
+      firstName = parts[0] || '';
+      lastName = parts.slice(1).join(' ') || '-';
+    }
+
+    const statuses = columns.map(col => {
+      const status = attMap[`${st.id}|${col.date}|${col.scheduleId}`];
+      return {
+        status: status || null,
+        symbol: status ? (STATUS_SYMBOLS[status] || '/') : ''
+      };
+    });
+
+    return {
+      no: idx + 1,
+      studentCode: st.student_code,
+      firstName,
+      lastName,
+      statuses
+    };
+  });
+
+  return {
+    subjectCode, subjectName, teacherName, sem, acadYear,
+    section: sectionFilter, columns, students: matrix,
+    dayScheduleMap, scheduleIds
+  };
+}
+
+// ── GET /api/report/preview ──
+// ดึงข้อมูลแบบ JSON สำหรับแสดงบน Dashboard
+router.get('/preview', async (req, res) => {
+  try {
+    const { subject_id, section, date_from, date_to, semester, academic_year } = req.query;
+    if (!subject_id) return res.status(400).json({ error: 'กรุณาเลือกวิชา' });
+    const data = await fetchReportData({ subject_id, section, date_from, date_to, semester, academic_year });
+    res.json(data);
+  } catch (err) {
+    console.error('Report preview error:', err);
+    res.status(err.message.includes('ไม่พบ') ? 404 : 500).json({ error: err.message });
+  }
+});
+
 // ── GET /api/report/export-excel ──
 // สร้างไฟล์ Excel ตามรูปแบบ RMS — ส่งกลับเป็น .xlsx
 router.get('/export-excel', async (req, res) => {
@@ -85,108 +229,9 @@ router.get('/export-excel', async (req, res) => {
     const { subject_id, section, date_from, date_to, semester, academic_year } = req.query;
     if (!subject_id) return res.status(400).json({ error: 'กรุณาเลือกวิชา' });
 
-    // ── 1. ดึงข้อมูลวิชา + ตารางสอน ──
-    const sectionFilter = section || 'ปวช.2/1';
-    const schedResult = await pool.query(
-      `SELECT s.id, s.day_of_week, s.start_period, s.end_period,
-              s.custom_start_time, s.custom_end_time,
-              s.semester, s.academic_year, s.section,
-              sub.subject_code, sub.subject_name,
-              t.name AS teacher_name
-       FROM schedules s
-       JOIN subjects sub ON s.subject_id = sub.id
-       LEFT JOIN teachers t ON s.teacher_id = t.id
-       WHERE s.subject_id = $1 AND s.is_active = TRUE
-         AND COALESCE(s.section, 'ปวช.2/1') = $2
-       ORDER BY s.day_of_week, s.start_period`,
-      [subject_id, sectionFilter]
-    );
-    if (schedResult.rows.length === 0) return res.status(404).json({ error: 'ไม่พบตารางสอนของวิชานี้' });
-
-    const schedules = schedResult.rows;
-    const subjectCode = schedules[0].subject_code;
-    const subjectName = schedules[0].subject_name;
-    const teacherName = schedules[0].teacher_name || '';
-    const sem = semester || schedules[0].semester || '';
-    const acadYear = academic_year || schedules[0].academic_year || '';
-    const scheduleIds = schedules.map(s => s.id);
-
-    // สร้าง map: day_of_week → [{schedule_id, start, end}]
-    const dayScheduleMap = {};
-    schedules.forEach(s => {
-      if (!dayScheduleMap[s.day_of_week]) dayScheduleMap[s.day_of_week] = [];
-      dayScheduleMap[s.day_of_week].push({
-        id: s.id,
-        startTime: s.custom_start_time || periodToTime(s.start_period),
-        endTime: s.custom_end_time || periodToEndTime(s.end_period),
-        startPeriod: s.start_period,
-        endPeriod: s.end_period
-      });
-    });
-
-    // ── 2. ดึงนักเรียนในกลุ่ม ──
-    const studentsResult = await pool.query(
-      `SELECT id, student_code, name, group_name
-       FROM students
-       WHERE is_active = TRUE AND COALESCE(group_name, 'ปวช.2/1') = $1
-       ORDER BY student_code`,
-      [sectionFilter]
-    );
-    const students = studentsResult.rows;
-
-    // ── 3. ดึง attendance records ──
-    let dateCondition = '';
-    const params = [scheduleIds];
-    let pi = 2;
-    if (date_from) { dateCondition += ` AND DATE(ar.checked_at AT TIME ZONE 'Asia/Bangkok') >= $${pi}`; params.push(date_from); pi++; }
-    if (date_to) { dateCondition += ` AND DATE(ar.checked_at AT TIME ZONE 'Asia/Bangkok') <= $${pi}`; params.push(date_to); pi++; }
-
-    const attResult = await pool.query(
-      `SELECT ar.student_id, ar.schedule_id, ar.status,
-              DATE(ar.checked_at AT TIME ZONE 'Asia/Bangkok') AS attend_date
-       FROM attendance_records ar
-       WHERE ar.schedule_id = ANY($1) ${dateCondition}
-       ORDER BY ar.checked_at`,
-      params
-    );
-
-    // ── 4. สร้างรายการ "คอลัมน์วัน+เวลา" ──
-    // จัดกลุ่ม attendance ตาม date+schedule_id
-    const attMap = {}; // key: "studentId|date|scheduleId" → status
-    const dateSet = new Set();
-    attResult.rows.forEach(r => {
-      const dateStr = r.attend_date instanceof Date ? r.attend_date.toISOString().slice(0,10) : String(r.attend_date).slice(0,10);
-      dateSet.add(dateStr);
-      const key = `${r.student_id}|${dateStr}|${r.schedule_id}`;
-      attMap[key] = r.status;
-    });
-
-    // สร้างคอลัมน์ Header: วันที่ + ช่วงเวลา (เรียงตามวันที่)
-    const sortedDates = [...dateSet].sort();
-    const columns = []; // [{date, scheduleId, startTime, endTime, header}]
-    sortedDates.forEach(dateStr => {
-      const d = new Date(dateStr + 'T00:00:00+07:00');
-      const dayOfWeek = d.getDay();
-      const dayScheds = dayScheduleMap[dayOfWeek] || [];
-      if (dayScheds.length === 0) {
-        // ถ้าไม่มี schedule สำหรับวันนี้ ให้ใช้ schedule แรก
-        columns.push({
-          date: dateStr,
-          scheduleId: scheduleIds[0],
-          header: `${formatThaiDate(dateStr)}`
-        });
-      } else {
-        dayScheds.forEach(ds => {
-          const startH = ds.startTime.replace(':', '.');
-          const endH = ds.endTime.replace(':', '.');
-          columns.push({
-            date: dateStr,
-            scheduleId: ds.id,
-            header: `${formatThaiDate(dateStr)} ${startH} - ${endH}`
-          });
-        });
-      }
-    });
+    const data = await fetchReportData({ subject_id, section, date_from, date_to, semester, academic_year });
+    const { subjectCode, subjectName, teacherName, sem, acadYear, columns, students } = data;
+    const sectionFilter = data.section;
 
     // ── 5. สร้าง Excel ──
     const wb = new ExcelJS.Workbook();
@@ -264,48 +309,33 @@ router.get('/export-excel', async (req, res) => {
     // ── แถว 6+: ข้อมูลนักเรียน ──
     students.forEach((st, si) => {
       const row = headerRow + 1 + si;
-      // แยกชื่อ-สกุล
-      const fullName = st.name || '';
-      let title = '', firstName = '', lastName = '';
-      const prefixes = ['นางสาว','นาย','นาง'];
-      for (const p of prefixes) {
-        if (fullName.startsWith(p)) { title = p; break; }
-      }
-      const nameOnly = title ? fullName.slice(title.length).trim() : fullName;
-      const parts = nameOnly.split(' ');
-      firstName = title + (parts[0] || '');
-      lastName = parts.slice(1).join(' ') || '-';
 
-      ws.getCell(row, 1).value = si + 1;
+      ws.getCell(row, 1).value = st.no;
       ws.getCell(row, 1).font = fontData;
       ws.getCell(row, 1).alignment = centerAlign;
 
-      ws.getCell(row, 2).value = st.student_code;
+      ws.getCell(row, 2).value = st.studentCode;
       ws.getCell(row, 2).font = fontData;
       ws.getCell(row, 2).alignment = centerAlign;
 
-      ws.getCell(row, 3).value = firstName;
+      ws.getCell(row, 3).value = st.firstName;
       ws.getCell(row, 3).font = fontData;
 
-      ws.getCell(row, 4).value = lastName;
+      ws.getCell(row, 4).value = st.lastName;
       ws.getCell(row, 4).font = fontData;
 
       // สถานะแต่ละวัน
-      columns.forEach((col, ci) => {
-        const key = `${st.id}|${col.date}|${col.scheduleId}`;
-        const status = attMap[key];
-        const symbol = status ? (STATUS_SYMBOLS[status] || '/') : '';
+      st.statuses.forEach((s, ci) => {
         const cell = ws.getCell(row, 5 + ci);
-        cell.value = symbol;
+        cell.value = s.symbol;
         cell.font = fontStatus;
         cell.alignment = centerAlign;
 
-        // สีตัวอักษร
-        if (status === 'absent') {
+        if (s.status === 'absent') {
           cell.font = { ...fontStatus, color: { argb: 'FFFF0000' } };
-        } else if (status === 'sick_leave') {
+        } else if (s.status === 'sick_leave') {
           cell.font = { ...fontStatus, color: { argb: 'FFF97316' } };
-        } else if (status === 'personal_leave') {
+        } else if (s.status === 'personal_leave') {
           cell.font = { ...fontStatus, color: { argb: 'FF8B5CF6' } };
         }
       });
