@@ -281,7 +281,7 @@ router.get('/attendance', async (req, res) => {
     res.json(result.rows.map(r => {
       const checkedAt = r.checked_at_th || r.checked_at;
       const timeStr = checkedAt
-        ? new Date(checkedAt).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bangkok' })
+        ? new Date(checkedAt).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })
         : '-';
       return {
         id: r.id,
