@@ -142,7 +142,7 @@ async function fetchReportData({ subject_id, section, date_from, date_to, semest
 
   const attResult = await pool.query(
     `SELECT ar.student_id, ar.schedule_id, ar.status,
-            DATE(ar.checked_at AT TIME ZONE 'Asia/Bangkok') AS attend_date
+            TO_CHAR(ar.checked_at AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM-DD') AS attend_date
      FROM attendance_records ar
      LEFT JOIN qr_sessions qs ON ar.qr_session_id = qs.id
      WHERE (ar.schedule_id = ANY($1) OR qs.subject_id = $2)
