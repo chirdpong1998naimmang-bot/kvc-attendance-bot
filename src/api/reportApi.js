@@ -125,11 +125,11 @@ async function fetchReportData({ subject_id, section, date_from, date_to, semest
 
   // ดึงนักเรียน — ลอง match section ทั้งแบบยาวและแบบสั้น
   const studentsResult = await pool.query(
-    `SELECT id, student_id AS student_code, title, first_name, last_name, section, department
+    `SELECT id, student_code, name, group_name
      FROM students
      WHERE is_active = TRUE
-       AND (section = $1 OR section = $2 OR $1 = '' OR $2 = '')
-     ORDER BY student_id`,
+       AND (group_name = $1 OR group_name = $2)
+     ORDER BY student_code`,
     [schedSection, shortSection]
   );
   const students = studentsResult.rows;
@@ -176,9 +176,17 @@ async function fetchReportData({ subject_id, section, date_from, date_to, semest
   });
 
   // สร้างตาราง matrix: นักเรียน × คอลัมน์วัน
-  const matrix = students.map((st, idx) => {
-    const firstName = (st.title || '') + (st.first_name || '');
-    const lastName = st.last_name || '-';
+    const matrix = students.map((st, idx) => {
+    const fullName = st.name || '';
+    let firstName = fullName, lastName = '-';
+    for (const p of ['นางสาว','นาย','นาง']) {
+      if (fullName.startsWith(p)) {
+        const rest = fullName.slice(p.length).trim().split(' ');
+        firstName = p + (rest[0] || '');
+        lastName = rest.slice(1).join(' ') || '-';
+        break;
+      }
+    }
 
     const statuses = columns.map(col => {
       const status = attMap[`${st.id}|${col.date}|${col.scheduleId}`];
