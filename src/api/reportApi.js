@@ -55,7 +55,7 @@ router.get('/filters', async (req, res) => {
        FROM schedules s JOIN subjects sub ON s.subject_id = sub.id
        WHERE s.is_active = TRUE ORDER BY sub.subject_code`
     );
-    // ดึง section จากทั้ง schedules และ students
+    // ดึง section จาก schedules
     const sections = await pool.query(
       `SELECT DISTINCT COALESCE(s.section, 'ปวช.2/1') AS section
        FROM schedules s WHERE s.is_active = TRUE ORDER BY section`
@@ -123,7 +123,7 @@ async function fetchReportData({ subject_id, section, date_from, date_to, semest
     });
   });
 
-  // ดึงนักเรียน — ลอง match section ทั้งแบบยาวและแบบสั้น
+  // ดึงนักเรียน — match group_name กับ section (ทั้งแบบยาวและสั้น)
   const studentsResult = await pool.query(
     `SELECT id, student_code, name, group_name
      FROM students
@@ -135,8 +135,8 @@ async function fetchReportData({ subject_id, section, date_from, date_to, semest
   const students = studentsResult.rows;
 
   let dateCondition = '';
-  const params = [scheduleIds];
-  let pi = 2;
+  const params = [scheduleIds, subject_id];
+  let pi = 3;
   if (date_from) { dateCondition += ` AND DATE(ar.checked_at AT TIME ZONE 'Asia/Bangkok') >= $${pi}`; params.push(date_from); pi++; }
   if (date_to) { dateCondition += ` AND DATE(ar.checked_at AT TIME ZONE 'Asia/Bangkok') <= $${pi}`; params.push(date_to); pi++; }
 
@@ -144,17 +144,22 @@ async function fetchReportData({ subject_id, section, date_from, date_to, semest
     `SELECT ar.student_id, ar.schedule_id, ar.status,
             DATE(ar.checked_at AT TIME ZONE 'Asia/Bangkok') AS attend_date
      FROM attendance_records ar
-     WHERE ar.schedule_id = ANY($1) ${dateCondition}
+     LEFT JOIN qr_sessions qs ON ar.qr_session_id = qs.id
+     WHERE (ar.schedule_id = ANY($1) OR qs.subject_id = $2)
+     ${dateCondition}
      ORDER BY ar.checked_at`,
     params
   );
 
   const attMap = {};
   const dateSet = new Set();
+  const defaultScheduleId = scheduleIds[0];
   attResult.rows.forEach(r => {
     const dateStr = r.attend_date instanceof Date ? r.attend_date.toISOString().slice(0,10) : String(r.attend_date).slice(0,10);
     dateSet.add(dateStr);
-    attMap[`${r.student_id}|${dateStr}|${r.schedule_id}`] = r.status;
+    // ใช้ schedule_id จาก record หรือ fallback เป็น schedule แรก
+    const sid = r.schedule_id || defaultScheduleId;
+    attMap[`${r.student_id}|${dateStr}|${sid}`] = r.status;
   });
 
   const sortedDates = [...dateSet].sort();
@@ -176,7 +181,8 @@ async function fetchReportData({ subject_id, section, date_from, date_to, semest
   });
 
   // สร้างตาราง matrix: นักเรียน × คอลัมน์วัน
-    const matrix = students.map((st, idx) => {
+  const matrix = students.map((st, idx) => {
+    // แยกชื่อ-สกุลจาก name (เช่น "นางสาวชญานันท์ ด้วงปลี")
     const fullName = st.name || '';
     let firstName = fullName, lastName = '-';
     for (const p of ['นางสาว','นาย','นาง']) {
