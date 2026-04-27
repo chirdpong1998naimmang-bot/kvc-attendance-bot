@@ -55,9 +55,13 @@ router.get('/filters', async (req, res) => {
        FROM schedules s JOIN subjects sub ON s.subject_id = sub.id
        WHERE s.is_active = TRUE ORDER BY sub.subject_code`
     );
+    // ดึง section จากทั้ง schedules และ students
     const sections = await pool.query(
-      `SELECT DISTINCT COALESCE(s.section, 'ปวช.2/1') AS section
-       FROM schedules s WHERE s.is_active = TRUE ORDER BY section`
+      `SELECT DISTINCT section FROM (
+         SELECT DISTINCT section FROM schedules WHERE is_active = TRUE AND section IS NOT NULL
+         UNION
+         SELECT DISTINCT section FROM students WHERE is_active = TRUE AND section IS NOT NULL
+       ) t ORDER BY section`
     );
     const teachers = await pool.query(
       `SELECT DISTINCT t.id, t.name FROM teachers t
@@ -80,7 +84,8 @@ router.get('/filters', async (req, res) => {
 
 // ── ฟังก์ชันกลาง: ดึงข้อมูลรายงานเช็คชื่อ ──
 async function fetchReportData({ subject_id, section, date_from, date_to, semester, academic_year }) {
-  const sectionFilter = section || 'ปวช.2/1';
+  // section จาก frontend อาจเป็น "ปวช.2/1 - การบัญชี" (จาก schedules) หรือ "ปวช.2/1" (จาก students)
+  // ต้อง match ทั้ง 2 ตาราง
   const schedResult = await pool.query(
     `SELECT s.id, s.day_of_week, s.start_period, s.end_period,
             s.custom_start_time, s.custom_end_time,
@@ -91,9 +96,9 @@ async function fetchReportData({ subject_id, section, date_from, date_to, semest
      JOIN subjects sub ON s.subject_id = sub.id
      LEFT JOIN teachers t ON s.teacher_id = t.id
      WHERE s.subject_id = $1 AND s.is_active = TRUE
-       AND COALESCE(s.section, 'ปวช.2/1') = $2
+     ${section ? "AND s.section = $2" : ""}
      ORDER BY s.day_of_week, s.start_period`,
-    [subject_id, sectionFilter]
+    section ? [subject_id, section] : [subject_id]
   );
   if (schedResult.rows.length === 0) throw new Error('ไม่พบตารางสอนของวิชานี้');
 
@@ -104,6 +109,10 @@ async function fetchReportData({ subject_id, section, date_from, date_to, semest
   const sem = semester || schedules[0].semester || '';
   const acadYear = academic_year || schedules[0].academic_year || '';
   const scheduleIds = schedules.map(s => s.id);
+  const schedSection = schedules[0].section || '';
+
+  // ดึง section สั้นจาก schedule section (เช่น "ปวช.2/1 - การบัญชี" → "ปวช.2/1")
+  const shortSection = schedSection.split(' - ')[0].trim() || schedSection;
 
   const dayScheduleMap = {};
   schedules.forEach(s => {
@@ -117,11 +126,14 @@ async function fetchReportData({ subject_id, section, date_from, date_to, semest
     });
   });
 
+  // ดึงนักเรียน — ลอง match section ทั้งแบบยาวและแบบสั้น
   const studentsResult = await pool.query(
-    `SELECT id, student_code, name, group_name FROM students
-     WHERE is_active = TRUE AND COALESCE(group_name, 'ปวช.2/1') = $1
-     ORDER BY student_code`,
-    [sectionFilter]
+    `SELECT id, student_id AS student_code, title, first_name, last_name, section, department
+     FROM students
+     WHERE is_active = TRUE
+       AND (section = $1 OR section = $2 OR $1 = '' OR $2 = '')
+     ORDER BY student_id`,
+    [schedSection, shortSection]
   );
   const students = studentsResult.rows;
 
@@ -168,21 +180,8 @@ async function fetchReportData({ subject_id, section, date_from, date_to, semest
 
   // สร้างตาราง matrix: นักเรียน × คอลัมน์วัน
   const matrix = students.map((st, idx) => {
-    const fullName = st.name || '';
-    let firstName = fullName, lastName = '-';
-    for (const p of ['นางสาว','นาย','นาง']) {
-      if (fullName.startsWith(p)) {
-        const rest = fullName.slice(p.length).trim().split(' ');
-        firstName = p + (rest[0] || '');
-        lastName = rest.slice(1).join(' ') || '-';
-        break;
-      }
-    }
-    if (firstName === fullName) {
-      const parts = fullName.split(' ');
-      firstName = parts[0] || '';
-      lastName = parts.slice(1).join(' ') || '-';
-    }
+    const firstName = (st.title || '') + (st.first_name || '');
+    const lastName = st.last_name || '-';
 
     const statuses = columns.map(col => {
       const status = attMap[`${st.id}|${col.date}|${col.scheduleId}`];
@@ -203,7 +202,7 @@ async function fetchReportData({ subject_id, section, date_from, date_to, semest
 
   return {
     subjectCode, subjectName, teacherName, sem, acadYear,
-    section: sectionFilter, columns, students: matrix,
+    section: schedSection, columns, students: matrix,
     dayScheduleMap, scheduleIds
   };
 }
