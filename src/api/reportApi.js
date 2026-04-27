@@ -57,11 +57,8 @@ router.get('/filters', async (req, res) => {
     );
     // ดึง section จากทั้ง schedules และ students
     const sections = await pool.query(
-      `SELECT DISTINCT section FROM (
-         SELECT DISTINCT section FROM schedules WHERE is_active = TRUE AND section IS NOT NULL
-         UNION
-         SELECT DISTINCT section FROM students WHERE is_active = TRUE AND section IS NOT NULL
-       ) t ORDER BY section`
+      `SELECT DISTINCT COALESCE(s.section, 'ปวช.2/1') AS section
+       FROM schedules s WHERE s.is_active = TRUE ORDER BY section`
     );
     const teachers = await pool.query(
       `SELECT DISTINCT t.id, t.name FROM teachers t
