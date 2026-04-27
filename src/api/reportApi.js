@@ -30,7 +30,7 @@ function periodToEndTime(p) {
 
 // แปลงวันที่เป็นรูปแบบไทย เช่น "14 ต.ค. 2568"
 function formatThaiDate(dateStr) {
-  const d = new Date(dateStr + 'T00:00:00+07:00');
+  const d = new Date(dateStr + 'T12:00:00+07:00');
   const day = d.getDate();
   const months = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
   const month = months[d.getMonth()];
@@ -39,7 +39,7 @@ function formatThaiDate(dateStr) {
 }
 
 function formatThaiDateLong(dateStr) {
-  const d = new Date(dateStr + 'T00:00:00+07:00');
+  const d = new Date(dateStr + 'T12:00:00+07:00');
   const day = d.getDate();
   const months = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
   const month = months[d.getMonth()];
