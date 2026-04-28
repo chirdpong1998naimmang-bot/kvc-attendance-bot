@@ -412,5 +412,133 @@ router.get('/export-excel', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+// ── GET /api/report/time-preview ──
+// รายงานเวลาเข้าเรียน — แสดงทีละวัน
+router.get('/time-preview', async (req, res) => {
+  try {
+    const { subject_id, section, date } = req.query;
+    if (!subject_id || !date) return res.status(400).json({ error: 'กรุณาเลือกวิชาและวันที่' });
+
+    // ดึงข้อมูลตาราง + เวลาเรียนตามตาราง
+    const schedResult = await pool.query(
+      `SELECT s.id, s.custom_start_time, s.custom_end_time,
+              s.start_period, s.end_period, s.section,
+              sub.subject_code, sub.subject_name,
+              t.name AS teacher_name,
+              pt_start.start_time AS period_start,
+              pt_end.end_time AS period_end
+       FROM schedules s
+       JOIN subjects sub ON s.subject_id = sub.id
+       LEFT JOIN teachers t ON s.teacher_id = t.id
+       LEFT JOIN period_times pt_start ON s.start_period = pt_start.period_number
+       LEFT JOIN period_times pt_end ON s.end_period = pt_end.period_number
+       WHERE s.subject_id = $1 AND s.is_active = TRUE
+       ${section ? 'AND s.section = $2' : ''}
+       LIMIT 1`,
+      section ? [subject_id, section] : [subject_id]
+    );
+    if (schedResult.rows.length === 0) return res.status(404).json({ error: 'ไม่พบตารางสอน' });
+
+    const sched = schedResult.rows[0];
+    const schedStart = sched.custom_start_time || sched.period_start || '08:00';
+    const schedEnd = sched.custom_end_time || sched.period_end || '11:00';
+    const [sh, sm] = schedStart.split(':').map(Number);
+    const [eh, em] = schedEnd.split(':').map(Number);
+    const scheduledMinutes = (eh * 60 + em) - (sh * 60 + sm);
+    const schedSection = sched.section || '';
+    const shortSection = schedSection.split(' - ')[0].trim() || schedSection;
+
+    // ดึงนักเรียน
+    const studentsResult = await pool.query(
+      `SELECT id, student_code, name, group_name
+       FROM students WHERE is_active = TRUE
+       AND (group_name = $1 OR group_name = $2)
+       ORDER BY student_code`,
+      [schedSection, shortSection]
+    );
+
+    // ดึง attendance ของวันที่เลือก
+    const attResult = await pool.query(
+      `SELECT ar.student_id, ar.status,
+              TO_CHAR(ar.checked_at AT TIME ZONE 'Asia/Bangkok', 'HH24:MI') AS check_in_time,
+              TO_CHAR(ar.checked_out_at AT TIME ZONE 'Asia/Bangkok', 'HH24:MI') AS check_out_time
+       FROM attendance_records ar
+       LEFT JOIN qr_sessions qs ON ar.qr_session_id = qs.id
+       WHERE (qs.subject_id = $1 OR ar.schedule_id = ANY(
+         SELECT id FROM schedules WHERE subject_id = $1 AND is_active = TRUE
+       ))
+       AND DATE(ar.checked_at AT TIME ZONE 'Asia/Bangkok') = $2
+       AND ar.check_type = 'check_in'
+       ORDER BY ar.checked_at`,
+      [subject_id, date]
+    );
+
+    const attMap = {};
+    attResult.rows.forEach(r => { attMap[r.student_id] = r; });
+
+    // สร้างข้อมูลนักเรียน
+    const rows = studentsResult.rows.map((st, idx) => {
+      const fullName = st.name || '';
+      let firstName = fullName, lastName = '-';
+      for (const p of ['นางสาว','นาย','นาง']) {
+        if (fullName.startsWith(p)) {
+          const rest = fullName.slice(p.length).trim().split(' ');
+          firstName = p + (rest[0] || '');
+          lastName = rest.slice(1).join(' ') || '-';
+          break;
+        }
+      }
+
+      const att = attMap[st.id];
+      let actualMinutes = 0, percent = 0, passed = false;
+
+      if (att && att.check_in_time && att.check_out_time) {
+        const [ciH, ciM] = att.check_in_time.split(':').map(Number);
+        const [coH, coM] = att.check_out_time.split(':').map(Number);
+        actualMinutes = (coH * 60 + coM) - (ciH * 60 + ciM);
+        if (actualMinutes < 0) actualMinutes = 0;
+        percent = Math.min(100, Math.round((actualMinutes / scheduledMinutes) * 100));
+        passed = percent >= 80;
+      }
+
+      const actualHours = Math.floor(actualMinutes / 60);
+      const actualMins = actualMinutes % 60;
+
+      return {
+        no: idx + 1,
+        studentCode: st.student_code,
+        firstName,
+        lastName,
+        status: att ? att.status : 'absent',
+        checkIn: att?.check_in_time || '-',
+        checkOut: att?.check_out_time || '-',
+        actualTime: actualMinutes > 0 ? `${actualHours} ชม.${actualMins > 0 ? ` ${actualMins} น.` : ''}` : '-',
+        actualMinutes,
+        percent,
+        passed
+      };
+    });
+
+    const schedHours = Math.floor(scheduledMinutes / 60);
+    const schedMins = scheduledMinutes % 60;
+
+    res.json({
+      subjectCode: sched.subject_code,
+      subjectName: sched.subject_name,
+      teacherName: sched.teacher_name || '',
+      section: schedSection,
+      date,
+      dateDisplay: formatThaiDate(date),
+      scheduledTime: `${schedHours} ชม.${schedMins > 0 ? ` ${schedMins} น.` : ''}`,
+      scheduledMinutes,
+      scheduleStart: schedStart,
+      scheduleEnd: schedEnd,
+      students: rows
+    });
+  } catch (err) {
+    console.error('Time report error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 module.exports = { reportApiRouter: router };
