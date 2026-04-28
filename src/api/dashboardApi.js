@@ -266,6 +266,7 @@ router.get('/attendance', async (req, res) => {
       `SELECT ar.id, st.student_code, st.name, st.group_name,
               ar.check_type, ar.status,
               ar.checked_at AT TIME ZONE 'Asia/Bangkok' AS checked_at_th,
+              ar.checked_out_at AT TIME ZONE 'Asia/Bangkok' AS checked_out_at_th,
               ar.face_confidence,
               ar.remark, ar.is_manual,
               COALESCE(sub1.subject_name, sub2.subject_name) AS subject_name
@@ -283,6 +284,10 @@ router.get('/attendance', async (req, res) => {
       const timeStr = checkedAt
         ? new Date(checkedAt).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })
         : '-';
+      const checkedOutAt = r.checked_out_at_th;
+      const checkOutTimeStr = checkedOutAt
+        ? new Date(checkedOutAt).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })
+        : null;
       return {
         id: r.id,
         studentId: r.student_code,
@@ -293,6 +298,7 @@ router.get('/attendance', async (req, res) => {
         status: r.status,
         statusLabel: STATUS_LABELS[r.status] || r.status,
         time: timeStr,
+        checkOutTime: checkOutTimeStr,
         note: r.remark || (r.face_confidence ? `Face: ${Math.round(r.face_confidence)}%` : ''),
         isManual: r.is_manual || false
       };
@@ -375,7 +381,7 @@ router.post('/attendance/manual', async (req, res) => {
 
 router.post('/send-qr', async (req, res) => {
   try {
-    const qrType = req.body.qrType || 'check_in';
+    const qrType = req.body.qrType || req.body.type || 'check_in';
     const schedule = await pool.query(
       `SELECT s.id, s.subject_id, s.teacher_id, s.line_group_id, sub.subject_name, c.room_name, lg.line_group_id AS line_gid
        FROM schedules s JOIN subjects sub ON s.subject_id = sub.id JOIN classrooms c ON s.classroom_id = c.id
