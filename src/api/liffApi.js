@@ -307,6 +307,15 @@ router.post('/check-in', async (req, res) => {
             const percent = Math.min(100, Math.round((actualMinutes / scheduledMinutes) * 100));
             const passed = percent >= 80;
 
+            // ★ อัปเดตสถานะตามเกณฑ์ 80%
+            // ≥ 80% = มาเรียน (present), < 80% = สาย (late)
+            const newStatus = passed ? 'present' : 'late';
+            await pool.query(
+              'UPDATE attendance_records SET status = $1 WHERE id = $2',
+              [newStatus, existingRecord.id]
+            );
+            status = newStatus;
+
             // แปลงเป็นชั่วโมง:นาที
             const schedHours = Math.floor(scheduledMinutes / 60);
             const schedMins = scheduledMinutes % 60;
