@@ -261,6 +261,7 @@ router.post('/check-in', async (req, res) => {
     // ---- 7. บันทึกการเช็คชื่อ ----
     const checkedAt = new Date();
     let record;
+    let attendanceSummary = null; // สรุปชั่วโมงเรียน (เฉพาะ check-out)
 
     if (isCheckOut && existingRecord) {
       // === CHECK-OUT: UPDATE record เดิม ===
@@ -271,6 +272,63 @@ router.post('/check-in', async (req, res) => {
          RETURNING *`,
         [checkedAt, existingRecord.id]
       );
+
+      // === คำนวณชั่วโมงเรียนจริง vs ตามตาราง ===
+      try {
+        // ดึงเวลาตามตาราง
+        const schedResult = await pool.query(
+          `SELECT s.custom_start_time, s.custom_end_time,
+                  pt_start.start_time AS period_start,
+                  pt_end.end_time AS period_end
+           FROM schedules s
+           LEFT JOIN period_times pt_start ON s.start_period = pt_start.period_number
+           LEFT JOIN period_times pt_end ON s.end_period = pt_end.period_number
+           WHERE s.id = $1`,
+          [session.schedule_id]
+        );
+
+        if (schedResult.rows.length > 0) {
+          const sched = schedResult.rows[0];
+          const schedStart = sched.custom_start_time || sched.period_start;
+          const schedEnd = sched.custom_end_time || sched.period_end;
+
+          if (schedStart && schedEnd) {
+            // เวลาตามตาราง (นาที)
+            const [sh, sm] = schedStart.split(':').map(Number);
+            const [eh, em] = schedEnd.split(':').map(Number);
+            const scheduledMinutes = (eh * 60 + em) - (sh * 60 + sm);
+
+            // เวลาจริงจาก check-in ถึง check-out (นาที)
+            const checkInTime = new Date(record.rows[0].checked_at);
+            const checkOutTime = checkedAt;
+            const actualMinutes = Math.round((checkOutTime - checkInTime) / 60000);
+
+            // คำนวณเปอร์เซ็นต์
+            const percent = Math.min(100, Math.round((actualMinutes / scheduledMinutes) * 100));
+            const passed = percent >= 80;
+
+            // แปลงเป็นชั่วโมง:นาที
+            const schedHours = Math.floor(scheduledMinutes / 60);
+            const schedMins = scheduledMinutes % 60;
+            const actualHours = Math.floor(actualMinutes / 60);
+            const actualMins = actualMinutes % 60;
+
+            attendanceSummary = {
+              scheduledTime: `${schedHours} ชม.${schedMins > 0 ? ` ${schedMins} น.` : ''}`,
+              scheduledMinutes,
+              actualTime: `${actualHours} ชม.${actualMins > 0 ? ` ${actualMins} น.` : ''}`,
+              actualMinutes,
+              percent,
+              passed,
+              checkInAt: checkInTime.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }),
+              checkOutAt: checkOutTime.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }),
+            };
+          }
+        }
+      } catch (calcErr) {
+        console.warn('Attendance duration calc error:', calcErr.message);
+      }
+
     } else {
       // === CHECK-IN: INSERT record ใหม่ (เหมือนเดิม) ===
       record = await pool.query(
@@ -298,7 +356,8 @@ router.post('/check-in', async (req, res) => {
       studentName: student.name,
       subjectName: session.subject_name,
       checkType: session.qr_type,
-      checkedAt: checkedAtStr
+      checkedAt: checkedAtStr,
+      attendanceSummary  // ส่งสรุปชั่วโมงเรียนด้วย (ถ้า check-out)
     });
 
     // แจ้งครูผู้สอน
@@ -311,22 +370,25 @@ router.post('/check-in', async (req, res) => {
         studentName: student.name,
         subjectName: session.subject_name,
         checkType: session.qr_type,
-        status
+        status,
+        attendanceSummary
       });
     }
 
     // ---- 9. บันทึก Log ----
     await pool.query(
       `INSERT INTO system_logs (event_type, event_data, student_id)
-       VALUES ('checkin_success', $1, $2)`,
+       VALUES ($1, $2, $3)`,
       [
+        isCheckOut ? 'checkout_success' : 'checkin_success',
         JSON.stringify({
           check_type: session.qr_type,
           subject: session.subject_name,
           token: session.token,
           status,
           distance_m: distanceMeters,
-          face_confidence: faceConfidence
+          face_confidence: faceConfidence,
+          ...(attendanceSummary ? { attendance: attendanceSummary } : {})
         }),
         student.id
       ]
@@ -342,7 +404,8 @@ router.post('/check-in', async (req, res) => {
         subjectName: session.subject_name,
         checkedAt: checkedAtStr,
         distanceMeters: distanceMeters ? Math.round(distanceMeters) : null,
-        faceConfidence
+        faceConfidence,
+        attendanceSummary  // ส่งให้ LIFF แสดงผล
       }
     });
 
