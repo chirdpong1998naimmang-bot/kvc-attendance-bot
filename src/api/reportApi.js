@@ -170,7 +170,11 @@ async function fetchReportData({ subject_id, section, date_from, date_to, semest
     dateSet.add(dateStr);
     // ใช้ schedule_id จาก record หรือ fallback เป็น schedule แรก
     const sid = r.schedule_id || defaultScheduleId;
-    attMap[`${r.student_id}|${dateStr}|${sid}`] = r.status;
+    attMap[`${r.student_id}|${dateStr}|${sid}`] = {
+      status: r.status,
+      checkIn: r.check_in_time || null,
+      checkOut: r.check_out_time || null
+    };
   });
 
   const sortedDates = [...dateSet].sort();
@@ -206,10 +210,13 @@ async function fetchReportData({ subject_id, section, date_from, date_to, semest
     }
 
     const statuses = columns.map(col => {
-      const status = attMap[`${st.id}|${col.date}|${col.scheduleId}`];
+      const record = attMap[`${st.id}|${col.date}|${col.scheduleId}`];
+      const status = record ? record.status : null;
       return {
         status: status || null,
-        symbol: status ? (STATUS_SYMBOLS[status] || '/') : ''
+        symbol: status ? (STATUS_SYMBOLS[status] || '/') : '',
+        checkIn: record ? record.checkIn : null,
+        checkOut: record ? record.checkOut : null
       };
     });
 
