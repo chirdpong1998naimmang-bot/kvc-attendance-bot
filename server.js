@@ -83,6 +83,42 @@ async function start() {
   } catch (err) {
     console.warn('⚠️ Migration warning:', err.message);
   }
+  // Migration: สร้างตาราง RMS Mappings (รันซ้ำได้ปลอดภัย)
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS rms_student_mappings (
+        id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+        student_id UUID NOT NULL UNIQUE REFERENCES students(id) ON DELETE CASCADE,
+        rms_student_code VARCHAR(50) NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS rms_subject_mappings (
+        id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+        subject_id UUID NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
+        section VARCHAR(100) NOT NULL,
+        rms_subject_id VARCHAR(50) NOT NULL,
+        rms_group_id VARCHAR(50) NOT NULL,
+        rms_timetable_id VARCHAR(50),
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW(),
+        UNIQUE(subject_id, section)
+      );
+      CREATE TABLE IF NOT EXISTS rms_teacher_mappings (
+        id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+        teacher_id UUID NOT NULL UNIQUE REFERENCES teachers(id) ON DELETE CASCADE,
+        rms_teacher_id VARCHAR(50) NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_rms_student_code ON rms_student_mappings(rms_student_code);
+      CREATE INDEX IF NOT EXISTS idx_rms_subject_section ON rms_subject_mappings(subject_id, section);
+      CREATE INDEX IF NOT EXISTS idx_rms_teacher_id ON rms_teacher_mappings(rms_teacher_id);
+    `);
+    console.log('✅ Migration: RMS mapping tables ready');
+  } catch (err) {
+    console.warn('⚠️ RMS migration warning:', err.message);
+  }
   
   // เริ่ม Cron Job ส่ง QR อัตโนมัติ
   startScheduler();
