@@ -170,6 +170,36 @@ router.post('/check-in', async (req, res) => {
       return res.status(409).json({ success: false, error: 'คุณเช็คชื่อไปแล้ว' });
     }
 
+    // ---- 3.5 Check-out: หา record check-in ของวันนี้แล้ว UPDATE ----
+    let isCheckOut = false;
+    let existingRecord = null;
+    if (session.qr_type === 'check_out') {
+      // หา attendance record ที่เช็คชื่อเข้าเรียนของวิชานี้ วันนี้
+      const todayRecords = await pool.query(
+        `SELECT ar.id, ar.checked_out_at
+         FROM attendance_records ar
+         JOIN qr_sessions qs ON ar.qr_session_id = qs.id
+         WHERE ar.student_id = $1
+           AND qs.subject_id = $2
+           AND DATE(ar.checked_at AT TIME ZONE 'Asia/Bangkok') = DATE(NOW() AT TIME ZONE 'Asia/Bangkok')
+           AND ar.check_type = 'check_in'
+         ORDER BY ar.checked_at DESC
+         LIMIT 1`,
+        [student.id, session.subject_id]
+      );
+
+      if (todayRecords.rows.length === 0) {
+        return res.status(400).json({ success: false, error: 'ไม่พบข้อมูลเช็คชื่อเข้าเรียนของวิชานี้วันนี้ กรุณาเช็คชื่อเข้าเรียนก่อน' });
+      }
+
+      if (todayRecords.rows[0].checked_out_at) {
+        return res.status(409).json({ success: false, error: 'คุณเช็คชื่อออกเรียนไปแล้ว' });
+      }
+
+      isCheckOut = true;
+      existingRecord = todayRecords.rows[0];
+    }
+
     // ---- 4. ตรวจสอบ Face Verification ----
     if (!faceVerified) {
       return res.status(400).json({ success: false, error: 'กรุณายืนยันตัวตนด้วยใบหน้า' });
@@ -230,19 +260,33 @@ router.post('/check-in', async (req, res) => {
 
     // ---- 7. บันทึกการเช็คชื่อ ----
     const checkedAt = new Date();
-    const record = await pool.query(
-      `INSERT INTO attendance_records 
-        (student_id, qr_session_id, check_type, student_lat, student_lng, 
-         distance_meters, face_verified, face_confidence, status, checked_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-       RETURNING *`,
-      [
-        student.id, session.id, session.qr_type,
-        studentLat, studentLng, distanceMeters,
-        faceVerified, faceConfidence || null,
-        status, checkedAt
-      ]
-    );
+    let record;
+
+    if (isCheckOut && existingRecord) {
+      // === CHECK-OUT: UPDATE record เดิม ===
+      record = await pool.query(
+        `UPDATE attendance_records 
+         SET checked_out_at = $1, updated_at = NOW()
+         WHERE id = $2
+         RETURNING *`,
+        [checkedAt, existingRecord.id]
+      );
+    } else {
+      // === CHECK-IN: INSERT record ใหม่ (เหมือนเดิม) ===
+      record = await pool.query(
+        `INSERT INTO attendance_records 
+          (student_id, qr_session_id, check_type, student_lat, student_lng, 
+           distance_meters, face_verified, face_confidence, status, checked_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         RETURNING *`,
+        [
+          student.id, session.id, session.qr_type,
+          studentLat, studentLng, distanceMeters,
+          faceVerified, faceConfidence || null,
+          status, checkedAt
+        ]
+      );
+    }
 
     // ---- 8. ส่งข้อความยืนยัน ----
     const checkedAtStr = checkedAt.toLocaleTimeString('th-TH', {
