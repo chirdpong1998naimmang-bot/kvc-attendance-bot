@@ -76,11 +76,11 @@ async function checkAndSendQR() {
 
     if (!startTime || !endTime) continue;
 
-    // คำนวณเวลาส่ง QR เข้าเรียน (ก่อนเริ่มคาบ 5 นาที)
-    const checkInSendTime = subtractMinutes(startTime, schedule.send_minutes_before || 5);
+    // คำนวณเวลาส่ง QR เข้าเรียน (ก่อนเริ่มคาบ 15 นาที)
+    const checkInSendTime = subtractMinutes(startTime, 15);
 
-    // คำนวณเวลาส่ง QR หลังเรียน (ก่อนสิ้นสุดคาบ 5 นาที)
-    const checkOutSendTime = subtractMinutes(endTime, 5);
+    // คำนวณเวลาส่ง QR หลังเรียน (ก่อนสิ้นสุดคาบ 15 นาที)
+    const checkOutSendTime = subtractMinutes(endTime, 15);
 
     // ---- ส่ง QR เข้าเรียน ----
     if (currentTime === checkInSendTime) {
