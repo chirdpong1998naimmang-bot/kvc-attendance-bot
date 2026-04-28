@@ -1,10 +1,12 @@
 // ============================================================
 // QR Service - สร้างและตรวจสอบ QR Token
 // ============================================================
-
 const { pool } = require('../config/database');
 
-const QR_EXPIRE_MINUTES = parseInt(process.env.QR_EXPIRE_MINUTES || '30');
+// ★ QR ส่งก่อน 15 นาที + หมดอายุหลัง 15 นาที = อายุรวม 30 นาที
+// check_in:  ส่ง startTime-15, หมดอายุ startTime+15
+// check_out: ส่ง endTime-15,   หมดอายุ endTime+15
+const QR_BUFFER_MINUTES = 15;
 
 // ตัวอักษรที่ใช้สร้าง Token (ตัด 0,O,1,I,L ที่อ่านสับสน)
 const TOKEN_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
@@ -15,6 +17,43 @@ function generateToken(length = 8) {
     token += TOKEN_CHARS[Math.floor(Math.random() * TOKEN_CHARS.length)];
   }
   return token;
+}
+
+// คำนวณ expiresAt จากเวลาตามตาราง
+async function calcExpiresAt(scheduleId, qrType) {
+  try {
+    const result = await pool.query(
+      `SELECT s.custom_start_time, s.custom_end_time,
+              pt_start.start_time AS period_start,
+              pt_end.end_time AS period_end
+       FROM schedules s
+       LEFT JOIN period_times pt_start ON s.start_period = pt_start.period_number
+       LEFT JOIN period_times pt_end ON s.end_period = pt_end.period_number
+       WHERE s.id = $1`,
+      [scheduleId]
+    );
+
+    if (result.rows.length > 0) {
+      const sched = result.rows[0];
+      // เลือกเวลาอ้างอิง: check_in ใช้เวลาเริ่ม, check_out ใช้เวลาสิ้นสุด
+      const refTime = qrType === 'check_out'
+        ? (sched.custom_end_time || sched.period_end)
+        : (sched.custom_start_time || sched.period_start);
+
+      if (refTime) {
+        const [h, m] = refTime.split(':').map(Number);
+        const now = new Date();
+        const expiry = new Date(now);
+        expiry.setHours(h, m + QR_BUFFER_MINUTES, 0, 0); // เวลาอ้างอิง + 15 นาที
+        return expiry;
+      }
+    }
+  } catch (err) {
+    console.warn('calcExpiresAt error:', err.message);
+  }
+
+  // Fallback: ถ้าหาเวลาไม่ได้ ใช้ 30 นาทีจากตอนนี้
+  return new Date(Date.now() + 30 * 60 * 1000);
 }
 
 // สร้าง QR Session ใหม่
@@ -29,7 +68,8 @@ async function createQRSession({ scheduleId, subjectId, teacherId, lineGroupId, 
     attempts++;
   }
 
-  const expiresAt = new Date(Date.now() + QR_EXPIRE_MINUTES * 60 * 1000);
+  // คำนวณเวลาหมดอายุจากตาราง
+  const expiresAt = await calcExpiresAt(scheduleId, qrType);
 
   const result = await pool.query(
     `INSERT INTO qr_sessions 
@@ -39,7 +79,7 @@ async function createQRSession({ scheduleId, subjectId, teacherId, lineGroupId, 
     [scheduleId, subjectId, teacherId, lineGroupId, token, qrType, expiresAt]
   );
 
-  console.log(`✅ QR created: ${token} (${qrType}) expires ${expiresAt.toLocaleTimeString('th-TH')}`);
+  console.log(`✅ QR created: ${token} (${qrType}) expires → ${expiresAt.toLocaleTimeString('th-TH')}`);
   return result.rows[0];
 }
 
@@ -66,12 +106,12 @@ async function validateQRToken(token) {
   }
 
   if (new Date() > new Date(session.expires_at)) {
-    // อัปเดตสถานะเป็น expired
     await pool.query(
       "UPDATE qr_sessions SET status = 'expired' WHERE id = $1",
       [session.id]
     );
-    return { valid: false, error: 'QR Code หมดอายุแล้ว' };
+    const expTimeStr = new Date(session.expires_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+    return { valid: false, error: `QR Code หมดอายุแล้ว (หมดเวลา ${expTimeStr} น.)` };
   }
 
   return { valid: true, session };
