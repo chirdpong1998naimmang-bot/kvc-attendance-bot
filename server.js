@@ -73,6 +73,14 @@ async function start() {
   // ทดสอบเชื่อมต่อ Database
   await testConnection();
   await autoInitDatabase();
+
+  // Migration: เพิ่มคอลัมน์ checked_out_at (รันซ้ำได้ปลอดภัย)
+  try {
+    await pool.query('ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS checked_out_at TIMESTAMP');
+    console.log('✅ Migration: checked_out_at column ready');
+  } catch (err) {
+    console.warn('⚠️ Migration warning:', err.message);
+  }
   
   // เริ่ม Cron Job ส่ง QR อัตโนมัติ
   startScheduler();
