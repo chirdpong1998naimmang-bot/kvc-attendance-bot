@@ -119,6 +119,18 @@ async function start() {
   } catch (err) {
     console.warn('⚠️ RMS migration warning:', err.message);
   }
+
+// Migration: เพิ่มคอลัมน์ department, year, section ใน students
+  try {
+    await pool.query(`
+      ALTER TABLE students ADD COLUMN IF NOT EXISTS department VARCHAR(100);
+      ALTER TABLE students ADD COLUMN IF NOT EXISTS year VARCHAR(10);
+      ALTER TABLE students ADD COLUMN IF NOT EXISTS section VARCHAR(50);
+    `);
+    console.log('✅ Migration: students department/year/section columns ready');
+  } catch (err) {
+    console.warn('⚠️ Students migration warning:', err.message);
+  }
   
   // เริ่ม Cron Job ส่ง QR อัตโนมัติ
   startScheduler();
