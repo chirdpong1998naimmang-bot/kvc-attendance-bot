@@ -168,12 +168,14 @@ router.delete('/schedules/:id', async (req, res) => {
 });
 
 // ═══════════════════════════════════════════════
-// STUDENTS
+// STUDENTS — เก็บ department, year, section แยก
 // ═══════════════════════════════════════════════
 
 router.get('/students', async (req, res) => {
   try {
-    const result = await pool.query("SELECT id, student_code, name, group_name, education_level, line_user_id FROM students WHERE is_active = TRUE ORDER BY student_code");
+    const result = await pool.query(
+      "SELECT id, student_code, name, group_name, education_level, department, year, section, line_user_id FROM students WHERE is_active = TRUE ORDER BY student_code"
+    );
     res.json(result.rows.map(r => {
       const fullName = r.name || '';
       let title = '', firstName = '', lastName = '';
@@ -185,10 +187,27 @@ router.get('/students', async (req, res) => {
       const parts = nameOnly.trim().split(' ');
       firstName = parts[0] || '';
       lastName = parts.slice(1).join(' ') || '-';
-      const grp = r.group_name || 'ปวช.2/1';
+
+      // ดึง department, year, section จากคอลัมน์แยก หรือ parse จาก group_name
+      let level = r.education_level || 'ปวช.';
+      let year = r.year || '';
+      let section = r.section || '';
+      let department = r.department || '';
+
+      // fallback: parse จาก group_name ถ้ายังไม่มีค่าแยก
+      if (!year || !section) {
+        const grp = r.group_name || '';
+        const numMatch = grp.match(/(\d)\/(\d+)/);
+        if (numMatch) {
+          if (!year) year = numMatch[1];
+          if (!section) section = numMatch[2];
+        }
+      }
+
       return {
         id: r.id, student_id: r.student_code, title, first_name: firstName, last_name: lastName,
-        level: r.education_level || 'ปวช.', year: '2', section: grp, department: 'การบัญชี',
+        level, year, section, department,
+        group_name: r.group_name,
         line_user_id: r.line_user_id || ''
       };
     }));
@@ -201,7 +220,9 @@ router.post('/students', async (req, res) => {
     const code = student_id || studentId;
     const fullName = name || ((title || '') + (first_name || '') + ' ' + (last_name || '')).trim();
     if (!code || !fullName) return res.status(400).json({ error: 'กรุณากรอกรหัสและชื่อ' });
-    const groupName = section ? (level || 'ปวช.') + year + '/' + section : 'ปวช.2/1';
+
+    // ประกอบ group_name จาก level + year + section: "ปวช.2/1"
+    const groupName = (level || 'ปวช.') + (year || '1') + '/' + (section || '1');
 
     // ตรวจว่ามีอยู่แล้วหรือไม่ (รวม soft-deleted)
     const existing = await pool.query(
@@ -213,8 +234,10 @@ router.post('/students', async (req, res) => {
       if (!existing.rows[0].is_active) {
         // เคยถูกลบ → reactivate + อัปเดตข้อมูลใหม่
         await pool.query(
-          "UPDATE students SET name = $1, group_name = $2, education_level = $3, is_active = TRUE, updated_at = NOW() WHERE student_code = $4",
-          [fullName, groupName, level || 'ปวช.', code]
+          `UPDATE students SET name = $1, group_name = $2, education_level = $3,
+           department = $4, year = $5, section = $6,
+           is_active = TRUE, updated_at = NOW() WHERE student_code = $7`,
+          [fullName, groupName, level || 'ปวช.', department || null, year || null, section || null, code]
         );
         return res.json({ success: true, id: existing.rows[0].id, reactivated: true });
       }
@@ -222,8 +245,9 @@ router.post('/students', async (req, res) => {
     }
 
     const result = await pool.query(
-      "INSERT INTO students (student_code, name, group_name, education_level) VALUES ($1, $2, $3, $4) RETURNING id",
-      [code, fullName, groupName, level || 'ปวช.']
+      `INSERT INTO students (student_code, name, group_name, education_level, department, year, section)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+      [code, fullName, groupName, level || 'ปวช.', department || null, year || null, section || null]
     );
     res.json({ success: true, id: result.rows[0].id });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -231,11 +255,23 @@ router.post('/students', async (req, res) => {
 
 router.put('/students/:id', async (req, res) => {
   try {
-    const { title, first_name, last_name, name, section, level } = req.body;
+    const { title, first_name, last_name, name, section, level, year, department } = req.body;
     const fullName = name || ((title || '') + (first_name || '') + ' ' + (last_name || '')).trim();
+
+    // ประกอบ group_name ใหม่
+    const groupName = (level || 'ปวช.') + (year || '1') + '/' + (section || '1');
+
     await pool.query(
-      "UPDATE students SET name = COALESCE($1, name), group_name = COALESCE($2, group_name), education_level = COALESCE($3, education_level), updated_at = NOW() WHERE id = $4",
-      [fullName, section, level, req.params.id]
+      `UPDATE students SET
+        name = COALESCE($1, name),
+        group_name = COALESCE($2, group_name),
+        education_level = COALESCE($3, education_level),
+        department = COALESCE($4, department),
+        year = COALESCE($5, year),
+        section = COALESCE($6, section),
+        updated_at = NOW()
+      WHERE id = $7`,
+      [fullName, groupName, level, department, year, section, req.params.id]
     );
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -263,7 +299,7 @@ router.get('/attendance', async (req, res) => {
     const thaiNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Bangkok' }));
     const date = req.query.date || thaiNow.toISOString().slice(0, 10);
     const result = await pool.query(
-      `SELECT ar.id, st.student_code, st.name, st.group_name,
+      `SELECT ar.id, st.student_code, st.name, st.group_name, st.department,
               ar.check_type, ar.status,
               ar.checked_at AT TIME ZONE 'Asia/Bangkok' AS checked_at_th,
               ar.checked_out_at AT TIME ZONE 'Asia/Bangkok' AS checked_out_at_th,
@@ -293,7 +329,7 @@ router.get('/attendance', async (req, res) => {
         studentId: r.student_code,
         name: r.name,
         section: r.group_name,
-        department: 'การบัญชี',
+        department: r.department || '',
         subject: r.subject_name || '-',
         status: r.status,
         statusLabel: STATUS_LABELS[r.status] || r.status,
