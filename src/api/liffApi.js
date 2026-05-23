@@ -11,208 +11,50 @@ const { isWithinRadius } = require('../utils/gps');
 const router = express.Router();
 
 // ============================================================
-// Helpers - Self Registration
-// ============================================================
-async function ensureStudentRegistrationColumns() {
-  // เพิ่มคอลัมน์สำหรับ Self-Registration หากฐานข้อมูลเดิมยังไม่มี
-  // ใช้ IF NOT EXISTS เพื่อให้รันซ้ำได้อย่างปลอดภัย
-  await pool.query(`
-    ALTER TABLE students
-      ADD COLUMN IF NOT EXISTS prefix TEXT,
-      ADD COLUMN IF NOT EXISTS first_name TEXT,
-      ADD COLUMN IF NOT EXISTS last_name TEXT,
-      ADD COLUMN IF NOT EXISTS class_year TEXT,
-      ADD COLUMN IF NOT EXISTS room TEXT,
-      ADD COLUMN IF NOT EXISTS major TEXT
-  `);
-}
-
-function buildStudentName(prefix, firstName, lastName) {
-  return [prefix, firstName, lastName]
-    .map(v => String(v || '').trim())
-    .filter(Boolean)
-    .join('');
-}
-
-function buildGroupName(level, year, room) {
-  const cleanLevel = String(level || '').trim();
-  const cleanYear = String(year || '').replace(/^ปี\s*/i, '').trim();
-  const cleanRoom = String(room || '').trim();
-
-  if (!cleanRoom) return [cleanLevel, cleanYear].filter(Boolean).join('');
-
-  // ถ้าผู้ใช้กรอกเป็นรูปแบบเต็มอยู่แล้ว เช่น ปวช.2/1 หรือ 2/1 ให้ใช้ค่าที่กรอกเป็นหลัก
-  if (/^ปว/.test(cleanRoom)) return cleanRoom;
-  if (cleanRoom.includes('/')) return cleanLevel && cleanYear
-    ? `${cleanLevel}${cleanYear}/${cleanRoom.split('/').pop()}`
-    : cleanRoom;
-
-  return `${cleanLevel}${cleanYear}/${cleanRoom}`;
-}
-
-function normalizeStudentPayload(body) {
-  return {
-    lineUserId: String(body.lineUserId || '').trim(),
-    studentCode: String(body.studentCode || body.student_code || '').trim(),
-    prefix: String(body.prefix || '').trim(),
-    firstName: String(body.firstName || body.first_name || '').trim(),
-    lastName: String(body.lastName || body.last_name || '').trim(),
-    level: String(body.level || body.educationLevel || body.education_level || '').trim(),
-    year: String(body.year || body.classYear || body.class_year || '').trim(),
-    room: String(body.room || body.group || body.groupName || body.group_name || '').trim(),
-    major: String(body.major || '').trim()
-  };
-}
-
-function formatStudentResponse(row) {
-  return {
-    id: row.id,
-    studentCode: row.student_code,
-    student_code: row.student_code,
-    prefix: row.prefix || '',
-    firstName: row.first_name || '',
-    first_name: row.first_name || '',
-    lastName: row.last_name || '',
-    last_name: row.last_name || '',
-    name: row.name,
-    level: row.education_level || '',
-    education_level: row.education_level || '',
-    year: row.class_year || '',
-    class_year: row.class_year || '',
-    room: row.room || '',
-    major: row.major || '',
-    group: row.group_name,
-    group_name: row.group_name
-  };
-}
-
-
-// ============================================================
-// POST /api/liff/register - Self-Registration นักเรียน (ผูก LINE User ID และสร้างนักเรียนใหม่ได้)
+// POST /api/liff/register - ลงทะเบียนนักเรียน (ผูก LINE User ID)
 // ============================================================
 router.post('/register', async (req, res) => {
   try {
-    const payload = normalizeStudentPayload(req.body);
-    const {
-      lineUserId,
-      studentCode,
-      prefix,
-      firstName,
-      lastName,
-      level,
-      year,
-      room,
-      major
-    } = payload;
+    const { lineUserId, studentCode } = req.body;
 
-    if (!lineUserId) {
-      return res.status(400).json({ success: false, error: 'ไม่พบ LINE User ID กรุณาเปิดผ่าน LIFF/LINE อีกครั้ง' });
+    if (!lineUserId || !studentCode) {
+      return res.status(400).json({ error: 'กรุณากรอกรหัสนักศึกษา' });
     }
 
-    if (!studentCode) {
-      return res.status(400).json({ success: false, error: 'กรุณากรอกรหัสนักศึกษา' });
-    }
-
-    if (!firstName || !lastName) {
-      return res.status(400).json({ success: false, error: 'กรุณากรอกชื่อและสกุล' });
-    }
-
-    if (!level || !year || !room || !major) {
-      return res.status(400).json({ success: false, error: 'กรุณากรอกระดับ ชั้นปี กลุ่ม/ห้อง และสาขาวิชาให้ครบถ้วน' });
-    }
-
-    await ensureStudentRegistrationColumns();
-
-    const fullName = buildStudentName(prefix, firstName, lastName);
-    const groupName = buildGroupName(level, year, room);
-
-    // ลบ line_user_id เก่าจากนักเรียนคนอื่น (ถ้ามี) เพื่อป้องกัน LINE เดียวผูกหลายรหัส
-    await pool.query(
-      'UPDATE students SET line_user_id = NULL, updated_at = NOW() WHERE line_user_id = $1 AND student_code != $2',
-      [lineUserId, studentCode]
-    );
-
-    // ตรวจว่ามีรหัสนักเรียนนี้อยู่แล้วหรือไม่
-    const existing = await pool.query(
-      `SELECT id
-       FROM students
-       WHERE student_code = $1
-       LIMIT 1`,
+    // ค้นหานักเรียนจากรหัส
+    const student = await pool.query(
+      'SELECT id, name, group_name FROM students WHERE student_code = $1',
       [studentCode]
     );
 
-    let result;
-
-    if (existing.rows.length === 0) {
-      // ไม่พบใน DB → สร้างนักเรียนใหม่จากข้อมูลที่นักเรียนกรอกเอง
-      result = await pool.query(
-        `INSERT INTO students
-          (student_code, name, group_name, education_level, line_user_id,
-           prefix, first_name, last_name, class_year, room, major,
-           is_active, updated_at)
-         VALUES
-          ($1, $2, $3, $4, $5,
-           $6, $7, $8, $9, $10, $11,
-           TRUE, NOW())
-         RETURNING id, student_code, name, group_name, education_level,
-                   prefix, first_name, last_name, class_year, room, major`,
-        [
-          studentCode,
-          fullName,
-          groupName,
-          level,
-          lineUserId,
-          prefix,
-          firstName,
-          lastName,
-          year,
-          room,
-          major
-        ]
-      );
-    } else {
-      // พบใน DB แล้ว → อัปเดตข้อมูลล่าสุดและผูก LINE User ID
-      result = await pool.query(
-        `UPDATE students
-         SET name = $1,
-             group_name = $2,
-             education_level = $3,
-             line_user_id = $4,
-             prefix = $5,
-             first_name = $6,
-             last_name = $7,
-             class_year = $8,
-             room = $9,
-             major = $10,
-             is_active = TRUE,
-             updated_at = NOW()
-         WHERE student_code = $11
-         RETURNING id, student_code, name, group_name, education_level,
-                   prefix, first_name, last_name, class_year, room, major`,
-        [
-          fullName,
-          groupName,
-          level,
-          lineUserId,
-          prefix,
-          firstName,
-          lastName,
-          year,
-          room,
-          major,
-          studentCode
-        ]
-      );
+    if (student.rows.length === 0) {
+      return res.status(404).json({ error: `ไม่พบรหัส ${studentCode} ในระบบ กรุณาติดต่อครูเพื่อเพิ่มรหัสก่อน` });
     }
 
-    return res.json({
+    // ลบ line_user_id เก่าจากนักเรียนคนอื่น (ถ้ามี)
+    await pool.query(
+      'UPDATE students SET line_user_id = NULL WHERE line_user_id = $1 AND student_code != $2',
+      [lineUserId, studentCode]
+    );
+
+    // อัปเดต LINE User ID
+    await pool.query(
+      'UPDATE students SET line_user_id = $1, updated_at = NOW() WHERE student_code = $2',
+      [lineUserId, studentCode]
+    );
+
+    res.json({
       success: true,
-      message: existing.rows.length === 0 ? 'สร้างข้อมูลนักเรียนและลงทะเบียนสำเร็จ' : 'อัปเดตข้อมูลและลงทะเบียนสำเร็จ',
-      student: formatStudentResponse(result.rows[0])
+      student: {
+        id: student.rows[0].id,
+        name: student.rows[0].name,
+        group: student.rows[0].group_name,
+        studentCode
+      }
     });
   } catch (err) {
-    console.error('Register error:', err);
-    return res.status(500).json({ success: false, error: 'ลงทะเบียนไม่สำเร็จ: ' + err.message });
+    console.error('Register error:', err.message);
+    res.status(500).json({ error: 'ลงทะเบียนไม่สำเร็จ: ' + err.message });
   }
 });
 
@@ -223,13 +65,9 @@ router.get('/profile/:lineUserId', async (req, res) => {
   try {
     const { lineUserId } = req.params;
 
-    await ensureStudentRegistrationColumns();
-
     const student = await pool.query(
-      `SELECT id, student_code, name, group_name, education_level,
-              prefix, first_name, last_name, class_year, room, major
-       FROM students
-       WHERE line_user_id = $1 AND is_active = TRUE`,
+      `SELECT id, student_code, name, group_name, education_level
+       FROM students WHERE line_user_id = $1 AND is_active = TRUE`,
       [lineUserId]
     );
 
@@ -245,7 +83,7 @@ router.get('/profile/:lineUserId', async (req, res) => {
 
     res.json({
       registered: true,
-      student: formatStudentResponse(student.rows[0]),
+      student: student.rows[0],
       faceRegistered: faceCheck.rows.length > 0
     });
   } catch (err) {
