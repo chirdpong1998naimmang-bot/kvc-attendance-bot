@@ -1593,11 +1593,101 @@ function ReportsTab({ addToast }) {
 // ═══════════════════════════════════════════
 // MAIN APP
 // ═══════════════════════════════════════════
+function LineGroupsTab({ addToast }) {
+  const { data, loading, reload } = useApi('/api/line-groups/all');
+  const [busyId, setBusyId] = useState(null);
+  const groups = Array.isArray(data) ? data : [];
+
+  const setActive = async (group, isActive) => {
+    const actionText = isActive ? 'เปิดใช้งาน' : 'ปิดใช้งาน';
+    const name = group.group_name || group.line_group_id;
+    if (!confirm(`${actionText}กลุ่ม LINE "${name}" ใช่ไหม?`)) return;
+    setBusyId(group.id);
+    try {
+      const r = await fetch(`${API}/api/line-groups/${group.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_active: isActive })
+      });
+      const json = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(json.error || `HTTP ${r.status}`);
+      addToast(`${actionText}กลุ่ม LINE แล้ว`);
+      reload();
+    } catch (e) {
+      addToast(e.message || 'บันทึกไม่สำเร็จ', 'error');
+    }
+    setBusyId(null);
+  };
+
+  return (
+    <div>
+      <div className="card">
+        <div className="card-header">
+          <div>
+            <h2>จัดการกลุ่ม LINE</h2>
+            <p style={{fontSize:12,color:'var(--text2)',marginTop:4}}>
+              รายการนี้มาจากกลุ่ม LINE จริงที่ Bot เคยเข้าร่วม ปิดใช้งานกลุ่มเก่าเพื่อไม่ให้เลือกผิดในตารางสอน
+            </p>
+          </div>
+          <button className="btn btn-secondary" onClick={reload}>รีเฟรช</button>
+        </div>
+        {loading ? <Loading /> : groups.length === 0 ? (
+          <Empty msg="ยังไม่มีกลุ่ม LINE ให้เชิญ Bot เข้ากลุ่มก่อน" />
+        ) : (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>ชื่อกลุ่ม</th>
+                  <th>สถานะ</th>
+                  <th>สมาชิก</th>
+                  <th>ตารางสอนที่ใช้</th>
+                  <th>Group ID</th>
+                  <th>จัดการ</th>
+                </tr>
+              </thead>
+              <tbody>
+                {groups.map((g, i) => (
+                  <tr key={g.id}>
+                    <td>{i + 1}</td>
+                    <td style={{fontWeight:700}}>{g.group_name || '-'}</td>
+                    <td>
+                      {g.is_active
+                        ? <span className="badge badge-success">เปิดใช้งาน</span>
+                        : <span className="badge badge-danger">ปิดใช้งาน</span>}
+                    </td>
+                    <td>{g.member_count || 0}</td>
+                    <td>{g.schedule_count || 0}</td>
+                    <td style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text2)'}}>{g.line_group_id}</td>
+                    <td>
+                      {g.is_active ? (
+                        <button className="btn btn-sm btn-danger" disabled={busyId === g.id} onClick={() => setActive(g, false)}>
+                          ปิดใช้งาน
+                        </button>
+                      ) : (
+                        <button className="btn btn-sm btn-primary" disabled={busyId === g.id} onClick={() => setActive(g, true)}>
+                          เปิดใช้งาน
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 const TABS = [
   { id:'schedules', label:'ตารางสอน', icon:'📅' },
   { id:'students', label:'นักเรียน', icon:'🎓' },
   { id:'attendance', label:'เช็คชื่อ', icon:'📋' },
   { id:'qr', label:'ส่ง QR', icon:'📱' },
+  { id:'linegroups', label:'กลุ่ม LINE', icon:'💬' },
   { id:'classrooms', label:'พิกัดห้อง', icon:'📍' },
   { id:'face', label:'ลงทะเบียนใบหน้า', icon:'🤳' },
   { id:'reports', label:'รายงาน', icon:'📊' },
@@ -1616,6 +1706,7 @@ function App() {
       case 'students': return <StudentsTab addToast={addToast} />;
       case 'attendance': return <AttendanceTab addToast={addToast} />;
       case 'qr': return <QRTab addToast={addToast} />;
+      case 'linegroups': return <LineGroupsTab addToast={addToast} />;
       case 'classrooms': return <ClassroomsTab addToast={addToast} />;
       case 'face': return <FaceRegTab addToast={addToast} />;
       case 'reports': return <ReportsTab addToast={addToast} />;

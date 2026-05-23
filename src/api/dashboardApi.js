@@ -110,6 +110,49 @@ router.get('/line-groups', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+router.get('/line-groups/all', async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT lg.id, lg.line_group_id, lg.group_name, lg.member_count,
+              COALESCE(lg.is_active, TRUE) AS is_active, lg.updated_at,
+              COUNT(s.id) FILTER (WHERE s.is_active = TRUE) AS schedule_count
+       FROM line_groups lg
+       LEFT JOIN schedules s ON s.line_group_id = lg.id
+       GROUP BY lg.id, lg.line_group_id, lg.group_name, lg.member_count, lg.is_active, lg.updated_at
+       ORDER BY COALESCE(lg.is_active, TRUE) DESC, lg.group_name, lg.line_group_id`
+    );
+    res.json(result.rows.map(r => ({
+      id: r.id,
+      line_group_id: r.line_group_id,
+      group_name: r.group_name || r.line_group_id,
+      member_count: r.member_count || 0,
+      is_active: r.is_active,
+      schedule_count: Number(r.schedule_count || 0),
+      updated_at: r.updated_at
+    })));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.patch('/line-groups/:id', async (req, res) => {
+  try {
+    const isActive = req.body.is_active;
+    if (typeof isActive !== 'boolean') {
+      return res.status(400).json({ error: 'is_active must be true or false' });
+    }
+    const result = await pool.query(
+      `UPDATE line_groups
+       SET is_active = $1, updated_at = NOW()
+       WHERE id = $2
+       RETURNING id, line_group_id, group_name, is_active`,
+      [isActive, req.params.id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'ไม่พบกลุ่ม LINE' });
+    }
+    res.json({ success: true, group: result.rows[0] });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ═══════════════════════════════════════════════
 // SCHEDULES
 // ═══════════════════════════════════════════════
