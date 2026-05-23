@@ -6,7 +6,7 @@
 const express = require('express');
 const line = require('@line/bot-sdk');
 const { pool } = require('../config/database');
-const { sendTextMessage } = require('../services/lineService');
+const { sendTextMessage, buildLiffUrl } = require('../services/lineService');
 
 const router = express.Router();
 
@@ -186,7 +186,7 @@ async function handleDirectMessage(event) {
     const token = text.split(' ')[1];
     if (token) {
       await sendTextMessage(userId,
-        `กรุณาเช็คชื่อผ่าน LIFF App โดยกดลิงก์นี้:\n${process.env.LIFF_URL}?token=${token.toUpperCase()}`
+        `กรุณาเช็คชื่อผ่าน LIFF App โดยกดลิงก์นี้:\n${buildLiffUrl(token.toUpperCase())}`
       );
     }
   } else {

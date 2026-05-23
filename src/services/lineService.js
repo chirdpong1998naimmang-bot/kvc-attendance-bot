@@ -8,10 +8,20 @@ const client = new line.messagingApi.MessagingApiClient({
   channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN
 });
 
+function buildLiffUrl(token) {
+  const configured = String(process.env.LIFF_URL || '').trim();
+  const base = configured || 'https://whimsical-duckanoo-0385e2.netlify.app/liff/index.html';
+  const liffPage = /\/liff\/index\.html(?:$|\?)/.test(base)
+    ? base
+    : `${base.replace(/\/+$/, '')}/liff/index.html`;
+  const separator = liffPage.includes('?') ? '&' : '?';
+  return `${liffPage}${separator}token=${encodeURIComponent(token)}`;
+}
+
 // ส่ง Flex Message พร้อม QR Code เข้ากลุ่ม
 async function sendQRToGroup(groupId, { token, qrType, subjectName, room, sentAt }) {
   const isCheckIn = qrType === 'check_in';
-  const liffUrl = `${process.env.LIFF_URL}?token=${token}`;
+  const liffUrl = buildLiffUrl(token);
 
   const flexMessage = {
     type: 'flex',
@@ -203,5 +213,6 @@ module.exports = {
   sendQRToGroup,
   sendTextMessage,
   sendCheckInConfirmation,
-  notifyTeacher
+  notifyTeacher,
+  buildLiffUrl
 };

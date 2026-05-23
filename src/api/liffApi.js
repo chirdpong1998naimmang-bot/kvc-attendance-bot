@@ -90,7 +90,7 @@ function formatStudentResponse(row) {
 }
 
 function normalizeApprovalStatus(status) {
-  const s = String(status || 'approved').toLowerCase();
+  const s = String(status || 'pending').toLowerCase();
   if (s === 'pending' || s === 'rejected') return s;
   return 'approved';
 }
@@ -153,7 +153,7 @@ router.post('/register', async (req, res) => {
     );
 
     const existing = await pool.query(
-      'SELECT id, line_user_id, approval_status FROM students WHERE student_code = $1 LIMIT 1',
+      'SELECT id, line_user_id, approval_status, is_active FROM students WHERE student_code = $1 LIMIT 1',
       [studentCode]
     );
 
@@ -163,7 +163,7 @@ router.post('/register', async (req, res) => {
       if (currentStatus === 'approved' && row.line_user_id && row.line_user_id !== lineUserId) {
         return res.status(409).json({ success: false, error: 'รหัสนักเรียนนี้ถูกใช้งานแล้ว' });
       }
-      if (currentStatus === 'approved' && row.line_user_id === lineUserId) {
+      if (currentStatus === 'approved' && row.is_active === true && row.line_user_id === lineUserId) {
         const approved = await getStudentByLineUserId(lineUserId);
         return res.json({
           success: true,
@@ -225,6 +225,14 @@ router.get('/profile/:lineUserId', async (req, res) => {
     }
 
     const approvalStatus = normalizeApprovalStatus(row.approval_status);
+
+    if (!row.is_active) {
+      return res.json({
+        registered: false,
+        approvalStatus: approvalStatus === 'rejected' ? 'rejected' : 'inactive',
+        message: 'บัญชีนักเรียนนี้ยังไม่เปิดใช้งาน กรุณาลงทะเบียนใหม่เพื่อรอครูยืนยัน'
+      });
+    }
 
     if (approvalStatus === 'rejected') {
       return res.json({
