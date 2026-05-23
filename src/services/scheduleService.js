@@ -58,7 +58,12 @@ async function checkAndSendQR() {
   );
 
   for (const schedule of schedulesResult.rows) {
-    if (!schedule.line_gid) continue; // ยังไม่มีกลุ่มไลน์ ข้ามไป
+    if (!schedule.line_group_id || !schedule.line_gid) {
+      console.warn(
+        `⚠️ ข้ามส่ง QR อัตโนมัติ: "${schedule.subject_name}" ยังไม่ได้เลือกกลุ่ม LINE ในตารางสอน`
+      );
+      continue;
+    }
 
     // คำนวณเวลาส่ง QR เข้าเรียน (ก่อนเริ่มคาบ X นาที)
     const checkInSendTime = subtractMinutes(
@@ -89,7 +94,11 @@ async function checkAndSendQR() {
 
 // ส่ง QR ตาม schedule
 async function sendScheduledQR(schedule, qrType, today) {
-  console.log(`🔄 Auto-sending ${qrType} QR for: ${schedule.subject_name}`);
+  if (!schedule.line_group_id || !schedule.line_gid) {
+    throw new Error('กรุณาเลือกกลุ่ม LINE ในตารางสอนก่อนส่ง QR');
+  }
+
+  console.log(`🔄 Auto-sending ${qrType} QR for: ${schedule.subject_name} → group ${schedule.line_gid}`);
 
   // ยกเลิก QR เก่าของ schedule เดียวกัน (ถ้ามี)
   await expirePreviousSessions(schedule.id, qrType, today);

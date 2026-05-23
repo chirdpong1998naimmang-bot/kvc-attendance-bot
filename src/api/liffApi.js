@@ -718,8 +718,8 @@ router.post('/teacher/manual-qr', async (req, res) => {
     }
 
     const sch = schedule.rows[0];
-    if (!sch.line_gid) {
-      return res.status(400).json({ error: 'ยังไม่ได้ผูกไลน์กลุ่ม' });
+    if (!sch.line_group_id || !sch.line_gid) {
+      return res.status(400).json({ error: 'กรุณาเลือกกลุ่ม LINE ในตารางสอนก่อนส่ง QR' });
     }
 
     const { createQRSession, expirePreviousSessions } = require('../services/qrService');

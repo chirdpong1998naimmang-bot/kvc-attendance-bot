@@ -71,6 +71,45 @@ const STATUS_LABELS = {
   sick_leave: 'ลาป่วย', personal_leave: 'ลากิจ'
 };
 
+const LINE_GROUP_QR_ERROR = 'กรุณาเลือกกลุ่ม LINE ในตารางสอนก่อนส่ง QR';
+
+async function assertActiveLineGroup(lineGroupId) {
+  if (!lineGroupId) {
+    return { ok: false, error: 'กรุณาเลือกกลุ่ม LINE ก่อนบันทึกตารางสอน' };
+  }
+  const result = await pool.query(
+    `SELECT id, line_group_id, group_name
+     FROM line_groups
+     WHERE id = $1 AND is_active = TRUE`,
+    [lineGroupId]
+  );
+  if (result.rows.length === 0) {
+    return { ok: false, error: 'ไม่พบกลุ่ม LINE ที่เลือก หรือกลุ่มถูกปิดใช้งานแล้ว' };
+  }
+  return { ok: true, row: result.rows[0] };
+}
+
+// ═══════════════════════════════════════════════
+// LINE GROUPS
+// ═══════════════════════════════════════════════
+
+router.get('/line-groups', async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, line_group_id, group_name, member_count
+       FROM line_groups
+       WHERE is_active = TRUE
+       ORDER BY group_name, line_group_id`
+    );
+    res.json(result.rows.map(r => ({
+      id: r.id,
+      line_group_id: r.line_group_id,
+      group_name: r.group_name || r.line_group_id,
+      member_count: r.member_count || 0
+    })));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ═══════════════════════════════════════════════
 // SCHEDULES
 // ═══════════════════════════════════════════════
@@ -78,7 +117,7 @@ const STATUS_LABELS = {
 router.get('/schedules', async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT s.id, s.day_of_week, s.start_period, s.end_period, s.auto_send,
+      `SELECT s.id, s.line_group_id, s.day_of_week, s.start_period, s.end_period, s.auto_send,
               s.custom_start_time, s.custom_end_time, s.semester, s.academic_year, s.section,
               sub.subject_name, sub.subject_code,
               c.room_name, lg.group_name, t.name AS teacher_name
@@ -101,7 +140,9 @@ router.get('/schedules', async (req, res) => {
       room: r.room_name,
       teacher_name: r.teacher_name || '',
       autoSend: r.auto_send,
-      lineGroup: r.group_name,
+      line_group_id: r.line_group_id || '',
+      lineGroup: r.group_name || '',
+      lineGroupName: r.group_name || 'ยังไม่เลือกกลุ่ม LINE',
       semester: r.semester || '',
       academic_year: r.academic_year || ''
     })));
@@ -158,12 +199,11 @@ router.post('/schedules', async (req, res) => {
       }
     }
 
-    // หา line_group_id (ใช้กลุ่มแรกที่มี)
-    let lgId = line_group_id;
-    if (!lgId) {
-      const lgResult = await pool.query('SELECT id FROM line_groups LIMIT 1');
-      if (lgResult.rows.length > 0) lgId = lgResult.rows[0].id;
+    const lgCheck = await assertActiveLineGroup(line_group_id);
+    if (!lgCheck.ok) {
+      return res.status(400).json({ error: lgCheck.error });
     }
+    const lgId = lgCheck.row.id;
 
     const result = await pool.query(
       `INSERT INTO schedules (teacher_id, subject_id, classroom_id, line_group_id, day_of_week, start_period, end_period, custom_start_time, custom_end_time, semester, academic_year, section, auto_send)
@@ -176,8 +216,19 @@ router.post('/schedules', async (req, res) => {
 
 router.put('/schedules/:id', async (req, res) => {
   try {
-    const { subject_name, subject_code, day_of_week, start_time, end_time, room, section, semester, academic_year } = req.body;
+    const { subject_name, subject_code, day_of_week, start_time, end_time, room, section, semester, academic_year, line_group_id } = req.body;
     const dayIndex = DAYS_TH.indexOf(day_of_week);
+
+    if (line_group_id !== undefined) {
+      const lgCheck = await assertActiveLineGroup(line_group_id);
+      if (!lgCheck.ok) {
+        return res.status(400).json({ error: lgCheck.error });
+      }
+      await pool.query(
+        'UPDATE schedules SET line_group_id = $1, updated_at = NOW() WHERE id = $2',
+        [lgCheck.row.id, req.params.id]
+      );
+    }
 
     // อัปเดตวัน
     if (dayIndex >= 0) {
@@ -525,14 +576,27 @@ router.post('/attendance/manual', async (req, res) => {
 router.post('/send-qr', async (req, res) => {
   try {
     const qrType = req.body.qrType || req.body.type || 'check_in';
+    const scheduleId = req.body.schedule_id;
+    if (!scheduleId) {
+      return res.status(400).json({ error: 'กรุณาเลือกตารางสอน' });
+    }
+
     const schedule = await pool.query(
-      `SELECT s.id, s.subject_id, s.teacher_id, s.line_group_id, sub.subject_name, c.room_name, lg.line_group_id AS line_gid
-       FROM schedules s JOIN subjects sub ON s.subject_id = sub.id JOIN classrooms c ON s.classroom_id = c.id
-       LEFT JOIN line_groups lg ON s.line_group_id = lg.id WHERE s.is_active = TRUE LIMIT 1`
+      `SELECT s.id, s.subject_id, s.teacher_id, s.line_group_id,
+              sub.subject_name, c.room_name,
+              lg.line_group_id AS line_gid, lg.group_name AS line_group_name
+       FROM schedules s
+       JOIN subjects sub ON s.subject_id = sub.id
+       JOIN classrooms c ON s.classroom_id = c.id
+       LEFT JOIN line_groups lg ON s.line_group_id = lg.id
+       WHERE s.id = $1 AND s.is_active = TRUE`,
+      [scheduleId]
     );
-    if (schedule.rows.length === 0) return res.status(404).json({ error: 'ไม่มีตารางสอน' });
+    if (schedule.rows.length === 0) return res.status(404).json({ error: 'ไม่พบตารางสอน' });
     const sch = schedule.rows[0];
-    if (!sch.line_gid) return res.status(400).json({ error: 'ยังไม่ผูกกลุ่ม' });
+    if (!sch.line_group_id || !sch.line_gid) {
+      return res.status(400).json({ error: LINE_GROUP_QR_ERROR });
+    }
     const qr = await createQRSession({ scheduleId: sch.id, subjectId: sch.subject_id, teacherId: sch.teacher_id, lineGroupId: sch.line_group_id, qrType });
     const sentAt = new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
     await sendQRToGroup(sch.line_gid, { token: qr.token, qrType, subjectName: sch.subject_name, room: sch.room_name, sentAt });
