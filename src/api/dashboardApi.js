@@ -371,28 +371,31 @@ router.get('/students', async (req, res) => {
   try {
     await ensureStudentApprovalColumns();
     const result = await pool.query(
-      `SELECT id, student_code, name, group_name, education_level, department, year, section, line_user_id
+      `SELECT id, student_code, name, group_name, education_level, department, year, section,
+              prefix, first_name, last_name, class_year, room, major, line_user_id
        FROM students
        WHERE is_active = TRUE AND COALESCE(approval_status, 'approved') = 'approved'
        ORDER BY student_code`
     );
     res.json(result.rows.map(r => {
       const fullName = r.name || '';
-      let title = '', firstName = '', lastName = '';
+      let title = r.prefix || '', firstName = r.first_name || '', lastName = r.last_name || '';
       const prefixes = ['นางสาว','นาย','นาง'];
-      for (const p of prefixes) {
-        if (fullName.startsWith(p)) { title = p; break; }
+      if (!firstName && fullName) {
+        for (const p of prefixes) {
+          if (fullName.startsWith(p)) { title = title || p; break; }
+        }
+        const nameOnly = title ? fullName.slice(title.length) : fullName;
+        const parts = nameOnly.trim().split(/\s+/);
+        firstName = parts[0] || '';
+        lastName = parts.slice(1).join(' ') || '';
       }
-      const nameOnly = title ? fullName.slice(title.length) : fullName;
-      const parts = nameOnly.trim().split(' ');
-      firstName = parts[0] || '';
-      lastName = parts.slice(1).join(' ') || '-';
 
       // ดึง department, year, section จากคอลัมน์แยก หรือ parse จาก group_name
       let level = r.education_level || 'ปวช.';
-      let year = r.year || '';
-      let section = r.section || '';
-      let department = r.department || '';
+      let year = r.class_year || r.year || '';
+      let section = r.room || r.section || '';
+      let department = r.major || r.department || '';
 
       // fallback: parse จาก group_name ถ้ายังไม่มีค่าแยก
       if (!year || !section) {
@@ -406,6 +409,7 @@ router.get('/students', async (req, res) => {
 
       return {
         id: r.id, student_id: r.student_code, title, first_name: firstName, last_name: lastName,
+        name: fullName,
         level, year, section, department,
         group_name: r.group_name,
         line_user_id: r.line_user_id || ''
@@ -435,9 +439,10 @@ router.post('/students', async (req, res) => {
         // เคยถูกลบ → reactivate + อัปเดตข้อมูลใหม่
         await pool.query(
           `UPDATE students SET name = $1, group_name = $2, education_level = $3,
-           department = $4, year = $5, section = $6,
-           approval_status = 'approved', is_active = TRUE, updated_at = NOW() WHERE student_code = $7`,
-          [fullName, groupName, level || 'ปวช.', department || null, year || null, section || null, code]
+           prefix = $4, first_name = $5, last_name = $6,
+           department = $7, year = $8, section = $9, class_year = $8, room = $9, major = $7,
+           approval_status = 'approved', is_active = TRUE, updated_at = NOW() WHERE student_code = $10`,
+          [fullName, groupName, level || 'ปวช.', title || null, first_name || null, last_name || null, department || null, year || null, section || null, code]
         );
         return res.json({ success: true, id: existing.rows[0].id, reactivated: true });
       }
@@ -446,9 +451,14 @@ router.post('/students', async (req, res) => {
 
     await ensureStudentApprovalColumns();
     const result = await pool.query(
-      `INSERT INTO students (student_code, name, group_name, education_level, department, year, section, approval_status, is_active)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, 'approved', TRUE) RETURNING id`,
-      [code, fullName, groupName, level || 'ปวช.', department || null, year || null, section || null]
+      `INSERT INTO students (
+         student_code, name, group_name, education_level,
+         prefix, first_name, last_name,
+         department, year, section, class_year, room, major,
+         approval_status, is_active
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $9, $10, $8, 'approved', TRUE) RETURNING id`,
+      [code, fullName, groupName, level || 'ปวช.', title || null, first_name || null, last_name || null, department || null, year || null, section || null]
     );
     res.json({ success: true, id: result.rows[0].id });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -467,12 +477,18 @@ router.put('/students/:id', async (req, res) => {
         name = COALESCE($1, name),
         group_name = COALESCE($2, group_name),
         education_level = COALESCE($3, education_level),
-        department = COALESCE($4, department),
-        year = COALESCE($5, year),
-        section = COALESCE($6, section),
+        prefix = COALESCE($4, prefix),
+        first_name = COALESCE($5, first_name),
+        last_name = COALESCE($6, last_name),
+        department = COALESCE($7, department),
+        year = COALESCE($8, year),
+        section = COALESCE($9, section),
+        class_year = COALESCE($8, class_year),
+        room = COALESCE($9, room),
+        major = COALESCE($7, major),
         updated_at = NOW()
-      WHERE id = $7`,
-      [fullName, groupName, level, department, year, section, req.params.id]
+      WHERE id = $10`,
+      [fullName, groupName, level, title || null, first_name || null, last_name || null, department, year, section, req.params.id]
     );
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }

@@ -601,7 +601,19 @@ function StudentsTab({ addToast }) {
   const defaultForm = { student_id:'', title:'นาย', first_name:'', last_name:'', level:'ปวช.', year:'1', section:'', department:'', line_user_id:'' };
 
   const openAdd = () => { setForm({...defaultForm}); setModal('add'); };
-  const openEdit = (item) => { setForm({...item}); setModal('edit'); };
+  const openEdit = (item) => {
+    const normalized = {...item};
+    normalized.student_id = f(item,'student_id','studentCode','student_code','code') || '';
+    normalized.title = f(item,'title','prefix') || defaultForm.title;
+    normalized.first_name = f(item,'first_name','firstName') || '';
+    normalized.last_name = f(item,'last_name','lastName') || '';
+    normalized.level = f(item,'level','education_level') || defaultForm.level;
+    normalized.year = f(item,'year','class_year') || defaultForm.year;
+    normalized.section = f(item,'section','room') || '';
+    normalized.department = f(item,'department','major') || '';
+    setForm(normalized);
+    setModal('edit');
+  };
 
   const approveStudent = async (id, name) => {
     if (!confirm(`ยืนยันนักเรียน "${name}" ?`)) return;
@@ -655,11 +667,12 @@ function StudentsTab({ addToast }) {
   const f = (obj, ...keys) => { for (const k of keys) { if (obj[k] !== undefined && obj[k] !== null && obj[k] !== '') return obj[k]; } return ''; };
 
   const getName = (s) => {
-    if (s.full_name || s.fullName) return s.full_name || s.fullName;
-    if (s.name) return s.name;
     const t = f(s,'title','prefix') || '';
     const fn = f(s,'first_name','firstName') || '';
     const ln = f(s,'last_name','lastName') || '';
+    if (fn || ln) return `${t}${fn} ${ln}`.trim();
+    if (s.full_name || s.fullName) return s.full_name || s.fullName;
+    if (s.name) return s.name;
     return `${t}${fn} ${ln}`.trim() || '-';
   };
 
