@@ -97,8 +97,8 @@ async function checkAndSendQR() {
             sub.subject_name, sub.subject_code,
             c.room_name, c.latitude, c.longitude,
             lg.line_group_id AS line_gid,
-            TO_CHAR(s.custom_start_time, 'HH24:MI') AS custom_start,
-            TO_CHAR(s.custom_end_time, 'HH24:MI') AS custom_end,
+            LEFT(s.custom_start_time::TEXT, 5) AS custom_start,
+            LEFT(s.custom_end_time::TEXT, 5) AS custom_end,
             TO_CHAR(pt_start.start_time, 'HH24:MI') AS period_start,
             TO_CHAR(pt_end.end_time, 'HH24:MI') AS period_end
      FROM schedules s
@@ -197,13 +197,22 @@ async function sendScheduledQR(schedule, qrType, today) {
     minute: '2-digit'
   });
 
-  await sendQRToGroup(schedule.line_gid, {
+  const lineSent = await sendQRToGroup(schedule.line_gid, {
     token: qrSession.token,
     qrType,
     subjectName: schedule.subject_name,
     room: schedule.room_name,
     sentAt
   });
+
+  // ถ้าส่ง LINE ล้มเหลว ให้ยกเลิก session ทันที เพื่อให้ cron ลองใหม่นาทีหน้า
+  if (!lineSent) {
+    await pool.query(
+      `UPDATE qr_sessions SET status = 'expired' WHERE id = $1`,
+      [qrSession.id]
+    );
+    throw new Error(`ส่ง QR ไปยัง LINE group ${schedule.line_gid} ไม่สำเร็จ (token: ${qrSession.token})`);
+  }
 
   await pool.query(
     `INSERT INTO system_logs (event_type, event_data, teacher_id)

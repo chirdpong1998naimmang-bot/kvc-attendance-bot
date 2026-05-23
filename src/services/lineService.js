@@ -111,7 +111,12 @@ async function sendQRToGroup(groupId, { token, qrType, subjectName, room, sentAt
     console.log(`✅ QR sent to group ${groupId}: ${token} (${qrType})`);
     return true;
   } catch (err) {
+    // แสดง error detail ครบ เพื่อง่ายต่อการ debug
     console.error(`❌ Failed to send QR to group ${groupId}:`, err.message);
+    if (err.response) {
+      console.error(`   LINE API status: ${err.response.status}`);
+      console.error(`   LINE API body:`, JSON.stringify(err.response.data || err.response.body || {}));
+    }
     return false;
   }
 }
