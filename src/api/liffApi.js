@@ -182,21 +182,21 @@ router.post('/register', async (req, res) => {
            prefix, first_name, last_name, class_year, room, major, department, year, section,
            approval_status, is_active, registered_at, updated_at
          ) VALUES (
-           $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11, $9, $10,
+           $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
            'pending', FALSE, NOW(), NOW()
          ) RETURNING *`,
-        [studentCode, fullName, groupName, level, lineUserId, prefix, firstName, lastName, year, room, major]
+        [studentCode, fullName, groupName, level, lineUserId, prefix, firstName, lastName, classYear, room, major, major, classYear, room]
       );
     } else {
       result = await pool.query(
         `UPDATE students SET
            name = $1, group_name = $2, education_level = $3, line_user_id = $4,
            prefix = $5, first_name = $6, last_name = $7, class_year = $8, room = $9,
-           major = $10, department = $10, year = $8, section = $9,
+           major = $10, department = $11, year = $12, section = $13,
            approval_status = 'pending', is_active = FALSE,
            registered_at = COALESCE(registered_at, NOW()), approved_at = NULL, updated_at = NOW()
-         WHERE student_code = $11 RETURNING *`,
-        [fullName, groupName, level, lineUserId, prefix, firstName, lastName, classYear, room, major, studentCode]
+         WHERE student_code = $14 RETURNING *`,
+        [fullName, groupName, level, lineUserId, prefix, firstName, lastName, classYear, room, major, major, classYear, room, studentCode]
       );
     }
 
