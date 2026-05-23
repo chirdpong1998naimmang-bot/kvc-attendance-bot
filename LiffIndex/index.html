@@ -1,0 +1,1395 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>เช็คชื่อผู้เรียน</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+:root {
+  --bg: #FAFAF8; --surface: #FFFFFF; --surface2: #F3F2EE;
+  --text: #1A1A1A; --text2: #6B6B6B; --text3: #9C9C9C;
+  --border: #E5E4E0; --green: #0F6E56; --green-bg: #E1F5EE;
+  --green-dark: #085041; --blue: #185FA5; --blue-bg: #E6F1FB;
+  --red: #C62828; --red-bg: #FCEBEB; --amber: #854F0B; --amber-bg: #FAEEDA;
+  --radius: 14px; --radius-sm: 10px;
+}
+body {
+  font-family: 'Noto Sans Thai', sans-serif;
+  background: var(--bg); color: var(--text);
+  min-height: 100vh; -webkit-font-smoothing: antialiased;
+}
+
+/* Loading */
+#loading { display:flex; flex-direction:column; align-items:center; justify-content:center;
+  min-height:100vh; gap:16px; }
+.spinner { width:36px; height:36px; border:3px solid var(--border);
+  border-top-color: var(--green); border-radius:50%; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform:rotate(360deg); } }
+
+/* App container */
+.app { max-width:420px; margin:0 auto; padding:16px; }
+
+/* Header */
+.header { text-align:center; padding:20px 0 16px; }
+.header h1 { font-size:18px; font-weight:600; letter-spacing:-0.3px; }
+.header p { font-size:12px; color:var(--text3); margin-top:4px; }
+
+/* Student card */
+.student-card { display:flex; align-items:center; gap:12px;
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:var(--radius); padding:14px 16px; margin-bottom:20px; }
+.avatar { width:42px; height:42px; border-radius:50%;
+  background:linear-gradient(135deg, var(--green), #1D9E75);
+  display:flex; align-items:center; justify-content:center;
+  color:#fff; font-weight:700; font-size:16px; flex-shrink:0; }
+.student-info .name { font-weight:600; font-size:14px; }
+.student-info .detail { font-size:12px; color:var(--text2); margin-top:2px; }
+
+/* Steps indicator */
+.steps { display:flex; justify-content:center; gap:6px; margin-bottom:24px; }
+.step-dot { width:8px; height:8px; border-radius:50%; background:var(--border); transition:all .3s; }
+.step-dot.active { width:24px; border-radius:4px; background:var(--green); }
+.step-dot.done { background:var(--green); }
+
+/* Card panels */
+.panel { background:var(--surface); border:1px solid var(--border);
+  border-radius:var(--radius); padding:24px 20px; margin-bottom:16px;
+  animation: fadeUp .35s ease; }
+@keyframes fadeUp { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
+
+.panel-title { font-size:15px; font-weight:600; margin-bottom:4px; }
+.panel-desc { font-size:12px; color:var(--text2); margin-bottom:16px; }
+
+/* QR info badge */
+.qr-badge { display:inline-flex; align-items:center; gap:6px;
+  padding:6px 14px; border-radius:20px; font-size:12px; font-weight:600; margin-bottom:16px; }
+.qr-badge.check_in { background:var(--green-bg); color:var(--green-dark); }
+.qr-badge.check_out { background:var(--blue-bg); color:var(--blue); }
+
+/* Camera view */
+.camera-wrap { width:100%; aspect-ratio:1; border-radius:var(--radius-sm);
+  overflow:hidden; background:#111; position:relative; margin-bottom:16px; }
+.camera-wrap video { width:100%; height:100%; object-fit:cover; }
+.face-guide { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+  width:55%; height:70%; border:2.5px dashed rgba(255,255,255,.35);
+  border-radius:50%; pointer-events:none; }
+.camera-overlay { position:absolute; inset:0; display:flex; align-items:center;
+  justify-content:center; flex-direction:column; gap:8px; }
+.camera-overlay.verified { background:rgba(15,110,86,.85); }
+.camera-overlay .icon { font-size:40px; color:#fff; }
+.camera-overlay .label { font-size:13px; color:rgba(255,255,255,.9); }
+
+/* Capture button */
+.capture-btn { position:absolute; bottom:16px; left:50%; transform:translateX(-50%);
+  width:56px; height:56px; border-radius:50%; border:3px solid #fff;
+  background:rgba(255,255,255,.2); cursor:pointer; z-index:2; }
+.capture-btn .inner { width:40px; height:40px; border-radius:50%;
+  background:#fff; margin:5px auto; transition:transform .15s; }
+.capture-btn:active .inner { transform:scale(.9); }
+
+/* GPS map */
+.gps-visual { width:180px; height:180px; border-radius:50%;
+  border:2px solid var(--border); position:relative;
+  background:var(--surface2); margin:0 auto 16px; }
+.gps-center { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+  width:10px; height:10px; border-radius:50%; background:var(--red); }
+.gps-radius { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+  width:120px; height:120px; border-radius:50%; border:2px dashed var(--green); opacity:.4; }
+.gps-user { position:absolute; width:14px; height:14px; border-radius:50%;
+  transition:all .5s; z-index:1; }
+.gps-user.pass { background:var(--green); box-shadow:0 0 8px rgba(15,110,86,.4); }
+.gps-user.fail { background:var(--red); box-shadow:0 0 8px rgba(198,40,40,.4); }
+
+/* Info rows */
+.info-row { display:flex; justify-content:space-between; padding:8px 0;
+  border-bottom:1px solid var(--border); font-size:13px; }
+.info-row:last-child { border-bottom:none; }
+.info-row .label { color:var(--text2); }
+.info-row .value { font-weight:500; text-align:right; max-width:60%; }
+
+/* Buttons */
+.btn { width:100%; padding:13px; border-radius:var(--radius-sm); border:none;
+  font-family:inherit; font-size:14px; font-weight:600; cursor:pointer;
+  transition:all .15s; display:flex; align-items:center; justify-content:center; gap:6px; }
+.btn:active { transform:scale(.98); }
+.btn-primary { background:var(--green); color:#fff; }
+.btn-primary:disabled { background:var(--border); color:var(--text3); cursor:not-allowed; }
+.btn-secondary { background:transparent; border:1px solid var(--border); color:var(--text); }
+.btn-blue { background:var(--blue); color:#fff; }
+.btn-open-camera { background:#222; color:#fff; padding:10px 20px; width:auto;
+  border-radius:8px; font-size:13px; }
+
+/* Status */
+.status-icon { width:72px; height:72px; border-radius:50%; display:flex;
+  align-items:center; justify-content:center; margin:0 auto 16px; font-size:34px; }
+.status-icon.success { background:var(--green-bg); color:var(--green-dark); }
+.status-icon.error { background:var(--red-bg); color:var(--red); }
+
+/* Register form */
+.input-field { width:100%; padding:12px 14px; border-radius:var(--radius-sm);
+  border:1px solid var(--border); font-family:inherit; font-size:14px;
+  background:var(--surface2); margin-bottom:12px; outline:none; }
+.input-field:focus { border-color:var(--green); }
+
+/* Toast */
+.toast { position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
+  background:#333; color:#fff; padding:10px 20px; border-radius:20px;
+  font-size:13px; z-index:100; animation:fadeUp .3s ease; }
+
+/* Verification checks */
+.check-list { display:flex; flex-direction:column; gap:8px; margin-bottom:16px; }
+.check-item { display:flex; align-items:center; gap:10px; padding:10px 12px;
+  border-radius:var(--radius-sm); background:var(--surface2); font-size:13px; }
+.check-icon { width:24px; height:24px; border-radius:50%; display:flex;
+  align-items:center; justify-content:center; font-size:13px; flex-shrink:0; }
+.check-icon.pass { background:var(--green-bg); color:var(--green-dark); }
+.check-icon.fail { background:var(--red-bg); color:var(--red); }
+.check-icon.wait { background:var(--surface2); border:2px solid var(--border); }
+
+/* Choose action cards */
+.action-cards { display:flex; flex-direction:column; gap:10px; }
+.action-card { display:flex; align-items:center; gap:14px;
+  padding:16px; border-radius:var(--radius-sm); border:1.5px solid var(--border);
+  background:var(--surface); cursor:pointer; transition:all .2s; }
+.action-card:active { transform:scale(.98); }
+.action-card .ac-icon { font-size:28px; flex-shrink:0; }
+.action-card .ac-title { font-size:14px; font-weight:600; }
+.action-card .ac-desc { font-size:12px; color:var(--text2); margin-top:2px; }
+.action-card.checkin { border-color:var(--green); background:var(--green-bg); }
+.action-card.leave { border-color:var(--amber); background:var(--amber-bg); }
+
+/* Leave type selector */
+.leave-types { display:flex; gap:8px; margin-bottom:16px; }
+.leave-type { flex:1; padding:12px; border-radius:var(--radius-sm); border:1.5px solid var(--border);
+  background:var(--surface); cursor:pointer; text-align:center; transition:all .2s;
+  font-family:inherit; font-size:13px; font-weight:600; }
+.leave-type.selected { border-color:var(--green); background:var(--green-bg); color:var(--green-dark); }
+
+/* Image upload area */
+.upload-area { border:2px dashed var(--border); border-radius:var(--radius-sm);
+  padding:24px; text-align:center; cursor:pointer; transition:all .2s;
+  margin-bottom:16px; position:relative; overflow:hidden; }
+.upload-area:active { background:var(--surface2); }
+.upload-area img { max-width:100%; max-height:240px; border-radius:8px; object-fit:contain; }
+.upload-area input[type=file] { position:absolute; inset:0; opacity:0; cursor:pointer; }
+</style>
+</head>
+<body>
+
+<div id="loading">
+  <div class="spinner"></div>
+  <span style="font-size:13px;color:var(--text2)">กำลังโหลด...</span>
+</div>
+
+<div id="app" class="app" style="display:none"></div>
+
+<!-- LIFF SDK -->
+<script charset="utf-8" src="https://static.line-scdn.net/liff/edge/versions/2.24.0/sdk.js"></script>
+
+<script>
+// ============================================================
+// Configuration
+// ============================================================
+const CONFIG = {
+  LIFF_ID: '2009878792-1yb5rLNs',
+  API_BASE: 'https://kvc-attendance-bot.onrender.com/api/liff',
+  FACE_API_URL: 'https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js',
+  FACE_MODELS_URL: 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.12/model',
+};
+
+// ============================================================
+// State
+// ============================================================
+let state = {
+  step: 'loading', // loading, register, face-register, scan, choose, face, gps, confirm, leave, success, error
+  profile: null,    // LINE profile
+  student: null,    // student data from DB
+  qrSession: null,  // validated QR session
+  token: null,      // scanned QR token
+  faceVerified: false,
+  faceConfidence: 0,
+  gpsResult: null,
+  cameraStream: null,
+  errorMessage: '',
+  // ─── Leave request ───
+  leaveType: 'sick_leave',
+  leaveImage: null,
+  leaveRemark: '',
+  // ─── Face Recognition ───
+  faceApiLoaded: false,
+  faceRegistered: false,   // นักเรียนลงทะเบียนใบหน้าแล้วหรือยัง
+  faceRegStep: 0,          // 0=ยังไม่ถ่าย, 1=กำลังถ่าย, 2=ถ่ายเสร็จ, 3=บันทึกสำเร็จ
+  faceRegPhoto: null,      // รูปที่ถ่ายตอนลงทะเบียน (canvas data)
+  storedEmbedding: null,   // embedding จาก DB สำหรับเปรียบเทียบ
+};
+
+// ============================================================
+// Initialize LIFF
+// ============================================================
+async function initApp() {
+  try {
+    await liff.init({ liffId: CONFIG.LIFF_ID });
+    
+    if (!liff.isLoggedIn()) {
+      liff.login();
+      return;
+    }
+
+    state.profile = await liff.getProfile();
+
+    // ตรวจสอบ token จาก URL (ถ้ามาจากปุ่มในข้อความ QR)
+    const urlParams = new URLSearchParams(window.location.search);
+    const tokenFromUrl = urlParams.get('token');
+    if (tokenFromUrl) {
+      state.token = tokenFromUrl.toUpperCase();
+    }
+
+    // ตรวจสอบว่านักเรียนลงทะเบียนแล้วหรือยัง
+    const profileRes = await apiCall(`/profile/${state.profile.userId}`);
+    if (profileRes && profileRes.registered) {
+      state.student = profileRes.student;
+      state.approvalStatus = profileRes.approvalStatus || 'approved';
+      state.faceRegistered = profileRes.faceRegistered || false;
+
+      if (state.approvalStatus === 'pending') {
+        state.step = 'pending-approval';
+      } else if (state.approvalStatus === 'rejected') {
+        state.step = 'register';
+        showToast('การลงทะเบียนก่อนหน้าถูกปฏิเสธ กรุณาลงทะเบียนใหม่');
+      } else if (!state.faceRegistered) {
+        state.step = 'face-register';
+      } else if (state.token) {
+        await validateAndProceed();
+      } else {
+        state.step = 'scan';
+      }
+    } else if (profileRes && profileRes.approvalStatus === 'rejected') {
+      state.step = 'register';
+      showToast('การลงทะเบียนก่อนหน้าถูกปฏิเสธ กรุณาลงทะเบียนใหม่');
+    } else {
+      state.step = 'register';
+    }
+  } catch (err) {
+    console.error('Init error:', err);
+    state.step = 'error';
+    state.errorMessage = 'ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่';
+  }
+
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  render();
+}
+
+// ============================================================
+// API Helper
+// ============================================================
+async function apiCall(path, options = {}) {
+  try {
+    const res = await fetch(CONFIG.API_BASE + path, {
+      headers: { 'Content-Type': 'application/json', ...options.headers },
+      ...options,
+    });
+    return await res.json();
+  } catch (err) {
+    console.error('API error:', err);
+    return null;
+  }
+}
+
+// ============================================================
+// QR Validation
+// ============================================================
+async function validateAndProceed() {
+  const result = await apiCall('/validate-qr', {
+    method: 'POST',
+    body: JSON.stringify({ token: state.token })
+  });
+
+  if (result && result.valid) {
+    state.qrSession = result.session;
+    state.step = 'choose';
+  } else {
+    state.step = 'scan';
+    state.errorMessage = result?.error || 'QR Code ไม่ถูกต้อง';
+  }
+}
+
+// ============================================================
+// Face-api.js — โหลด Model + ฟังก์ชัน
+// ============================================================
+async function loadFaceApi() {
+  if (state.faceApiLoaded) return true;
+  try {
+    showToast('กำลังโหลดระบบจดจำใบหน้า...');
+    // โหลด face-api.js script
+    await new Promise((resolve, reject) => {
+      if (window.faceapi) { resolve(); return; }
+      const s = document.createElement('script');
+      s.src = CONFIG.FACE_API_URL;
+      s.onload = resolve;
+      s.onerror = reject;
+      document.head.appendChild(s);
+    });
+
+    // โหลด models (ใช้ TinyFaceDetector + FaceLandmark68 + FaceRecognition)
+    const MODEL_URL = CONFIG.FACE_MODELS_URL;
+    await Promise.all([
+      faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+      faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+      faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
+    ]);
+
+    state.faceApiLoaded = true;
+    console.log('✅ face-api.js loaded');
+    return true;
+  } catch (err) {
+    console.error('Face API load error:', err);
+    showToast('ไม่สามารถโหลดระบบจดจำใบหน้าได้');
+    return false;
+  }
+}
+
+// สร้าง embedding จาก video/canvas
+async function getFaceEmbedding(input) {
+  try {
+    // Normalize: วาดลง canvas ด้วยวิธีเดียวกันทุกครั้ง (flip horizontal สำหรับกล้องหน้า)
+    let sourceCanvas;
+    if (input instanceof HTMLVideoElement) {
+      // ตรวจว่า video พร้อมยัง
+      if (!input.videoWidth || !input.videoHeight || input.readyState < 2) {
+        console.warn('Video not ready:', input.videoWidth, input.videoHeight, input.readyState);
+        return null;
+      }
+      sourceCanvas = document.createElement('canvas');
+      sourceCanvas.width = input.videoWidth;
+      sourceCanvas.height = input.videoHeight;
+      const ctx = sourceCanvas.getContext('2d');
+      // Flip horizontal → ให้ภาพตรงกันทุกครั้ง (ไม่ mirror)
+      ctx.translate(sourceCanvas.width, 0);
+      ctx.scale(-1, 1);
+      ctx.drawImage(input, 0, 0, sourceCanvas.width, sourceCanvas.height);
+    } else {
+      sourceCanvas = input;
+    }
+
+    // ลอง detect ด้วย threshold ปกติก่อน
+    let detection = await faceapi
+      .detectSingleFace(sourceCanvas, new faceapi.TinyFaceDetectorOptions({ scoreThreshold: 0.3 }))
+      .withFaceLandmarks()
+      .withFaceDescriptor();
+
+    if (!detection) {
+      // ลองอีกครั้งด้วย threshold ต่ำลง + inputSize ใหญ่ขึ้น
+      detection = await faceapi
+        .detectSingleFace(sourceCanvas, new faceapi.TinyFaceDetectorOptions({ scoreThreshold: 0.15, inputSize: 512 }))
+        .withFaceLandmarks()
+        .withFaceDescriptor();
+    }
+
+    if (!detection) return null;
+    return {
+      descriptor: Array.from(detection.descriptor),
+      score: detection.detection.score
+    };
+  } catch (err) {
+    console.error('getFaceEmbedding error:', err);
+    return null;
+  }
+}
+
+// เปรียบเทียบ 2 embeddings → ค่า distance (ยิ่งน้อยยิ่งเหมือน)
+function compareFaces(embedding1, embedding2) {
+  // Normalize: ให้แน่ใจว่าเป็น flat array of numbers ทั้งคู่
+  const flat1 = flattenEmbedding(embedding1);
+  const flat2 = flattenEmbedding(embedding2);
+
+  console.log(`Compare faces: emb1 length=${flat1.length}, emb2 length=${flat2.length}`);
+
+  if (flat1.length !== flat2.length) {
+    console.warn(`Embedding length mismatch: ${flat1.length} vs ${flat2.length}`);
+    // ใช้ความยาวที่สั้นกว่า (ปกติ face-api.js ให้ 128)
+    const minLen = Math.min(flat1.length, flat2.length);
+    const desc1 = new Float32Array(flat1.slice(0, minLen));
+    const desc2 = new Float32Array(flat2.slice(0, minLen));
+    return faceapi.euclideanDistance(desc1, desc2);
+  }
+
+  const desc1 = new Float32Array(flat1);
+  const desc2 = new Float32Array(flat2);
+  return faceapi.euclideanDistance(desc1, desc2);
+}
+
+// แปลง embedding ที่อาจเก็บในหลายรูปแบบให้เป็น flat number array
+function flattenEmbedding(emb) {
+  if (!emb) return [];
+  // ถ้าเป็น string → parse JSON
+  if (typeof emb === 'string') {
+    try { emb = JSON.parse(emb); } catch(e) { return []; }
+  }
+  // ถ้าเป็น object ที่มี key เป็นตัวเลข (เช่น {"0": 0.1, "1": 0.2, ...})
+  if (emb && typeof emb === 'object' && !Array.isArray(emb)) {
+    const keys = Object.keys(emb).filter(k => !isNaN(k)).sort((a,b) => Number(a) - Number(b));
+    if (keys.length > 0) {
+      return keys.map(k => Number(emb[k]));
+    }
+  }
+  // ถ้าเป็น array อยู่แล้ว
+  if (Array.isArray(emb)) {
+    return emb.map(Number);
+  }
+  // Float32Array หรือ TypedArray
+  if (emb instanceof Float32Array || ArrayBuffer.isView(emb)) {
+    return Array.from(emb);
+  }
+  return [];
+}
+
+// ============================================================
+// Face Registration (ลงทะเบียนใบหน้า)
+// ============================================================
+async function startFaceRegistration() {
+  const loaded = await loadFaceApi();
+  if (!loaded) return;
+
+  state.faceRegStep = 1;
+  await startCamera();
+}
+
+async function captureFaceRegistration() {
+  const video = document.getElementById('camera-video');
+  if (!video) return;
+
+  try {
+    showToast('กำลังตรวจจับใบหน้า...');
+
+    // รอให้ video พร้อม
+    if (video.readyState < 2) {
+      showToast('กล้องยังไม่พร้อม กรุณารอสักครู่...');
+      await new Promise(r => setTimeout(r, 1500));
+    }
+
+    const result = await getFaceEmbedding(video);
+    if (!result) {
+      showToast('ไม่พบใบหน้า กรุณาถ่ายใหม่ หันหน้าตรงและอยู่ในกรอบ');
+      return;
+    }
+
+    // เก็บรูปถ่าย (flip horizontal ให้ตรงกับ embedding ที่สร้าง)
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.translate(canvas.width, 0);
+    ctx.scale(-1, 1);
+    ctx.drawImage(video, 0, 0);
+    state.faceRegPhoto = canvas.toDataURL('image/jpeg', 0.8);
+
+    stopCamera();
+    state.faceRegStep = 2;
+    state.faceConfidence = Math.round(result.score * 1000) / 10;
+
+    // บันทึก embedding ไป server
+    showToast('กำลังบันทึกข้อมูลใบหน้า...');
+    const saveResult = await apiCall('/face/register', {
+      method: 'POST',
+      body: JSON.stringify({
+        lineUserId: state.profile.userId,
+        embedding: result.descriptor,
+        photo: state.faceRegPhoto
+      })
+    });
+
+    if (saveResult && saveResult.success) {
+      state.faceRegStep = 3;
+      state.faceRegistered = true;
+      state.storedEmbedding = null; // ล้าง cache embedding เก่า
+      showToast('ลงทะเบียนใบหน้าสำเร็จ!');
+    } else {
+      showToast(saveResult?.error || 'บันทึกไม่สำเร็จ กรุณาลองใหม่');
+      state.faceRegStep = 0;
+    }
+    render();
+  } catch (err) {
+    console.error('captureFaceRegistration error:', err);
+    showToast('เกิดข้อผิดพลาด: ' + (err.message || 'กรุณาลองใหม่'));
+    state.faceRegStep = 0;
+    render();
+  }
+}
+
+function finishFaceRegistration() {
+  state.faceRegStep = 0;
+  state.faceRegPhoto = null;
+  if (state.token) {
+    validateAndProceed().then(() => render());
+  } else {
+    state.step = 'scan';
+    render();
+  }
+}
+
+// ============================================================
+// Camera / Face Detection
+// ============================================================
+async function startCamera() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'user', width: 480, height: 480 }
+    });
+    state.cameraStream = stream;
+    render();
+    
+    setTimeout(() => {
+      const video = document.getElementById('camera-video');
+      if (video) video.srcObject = stream;
+    }, 100);
+  } catch (err) {
+    showToast('ไม่สามารถเปิดกล้องได้');
+  }
+}
+
+function stopCamera() {
+  if (state.cameraStream) {
+    state.cameraStream.getTracks().forEach(t => t.stop());
+    state.cameraStream = null;
+  }
+}
+
+async function captureAndVerify() {
+  const video = document.getElementById('camera-video');
+  if (!video) return;
+
+  try {
+    // โหลด face-api.js ถ้ายังไม่โหลด
+    const loaded = await loadFaceApi();
+    if (!loaded) {
+      showToast('ไม่สามารถโหลดระบบจดจำใบหน้าได้');
+      return;
+    }
+
+    showToast('กำลังตรวจจับใบหน้า...');
+
+    // รอให้ video พร้อม
+    if (video.readyState < 2) {
+      showToast('กล้องยังไม่พร้อม กรุณารอสักครู่...');
+      await new Promise(r => setTimeout(r, 1500));
+    }
+
+    // ลองตรวจจับใบหน้า สูงสุด 3 ครั้ง (หน่วงให้กล้อง focus)
+    let result = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      if (attempt > 1) {
+        await new Promise(r => setTimeout(r, 800));
+        showToast(`ลองตรวจจับอีกครั้ง (${attempt}/3)...`);
+      }
+      result = await getFaceEmbedding(video);
+      if (result) {
+        console.log(`Face detected on attempt ${attempt}, score: ${result.score.toFixed(3)}`);
+        break;
+      }
+    }
+
+    if (!result) {
+      showToast('ไม่พบใบหน้า กรุณาหันหน้าตรง อยู่ในกรอบ และอยู่ในที่มีแสง');
+      return;
+    }
+
+    // ดึง embedding ที่เก็บไว้จาก DB
+    if (!state.storedEmbedding) {
+      showToast('กำลังโหลดข้อมูลใบหน้า...');
+      const embData = await apiCall(`/face/embedding/${state.profile.userId}`);
+      if (embData && embData.embedding) {
+        state.storedEmbedding = embData.embedding;
+      } else {
+        // ยังไม่ได้ลงทะเบียนใบหน้า → ให้ไปลงทะเบียนก่อน
+        stopCamera();
+        showToast('กรุณาลงทะเบียนใบหน้าก่อน');
+        state.step = 'face-register';
+        render();
+        return;
+      }
+    }
+
+    // เปรียบเทียบใบหน้า
+    const distance = compareFaces(result.descriptor, state.storedEmbedding);
+    const confidence = Math.max(0, Math.min(100, (1 - distance / 1.0) * 100));
+    const threshold = 0.75;
+
+    console.log(`Face verify: distance=${distance.toFixed(3)}, confidence=${confidence.toFixed(1)}%, threshold=${threshold}`);
+
+    if (distance <= threshold) {
+      state.faceVerified = true;
+      state.faceConfidence = Math.round(confidence * 10) / 10;
+      stopCamera();
+      state.step = 'gps';
+      showToast(`ยืนยันตัวตนสำเร็จ (${state.faceConfidence.toFixed(1)}%)`);
+    } else {
+      showToast(`ใบหน้าไม่ตรงกับที่ลงทะเบียน (ความเหมือน ${confidence.toFixed(1)}% / dist ${distance.toFixed(2)}) กรุณาลองใหม่`);
+    }
+    render();
+  } catch (err) {
+    console.error('captureAndVerify error:', err);
+    showToast('เกิดข้อผิดพลาด: ' + (err.message || 'ไม่ทราบสาเหตุ กรุณาลองใหม่'));
+  }
+}
+
+// ============================================================
+// GPS Check
+// ============================================================
+async function checkGPS() {
+  try {
+    const pos = await new Promise((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(resolve, reject, {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 0
+      });
+    });
+
+    const studentLat = pos.coords.latitude;
+    const studentLng = pos.coords.longitude;
+
+    // ดึงพิกัดห้องเรียนจาก QR session (server ส่งมาตอน validate-qr)
+    const cr = state.qrSession?.classroom;
+    const classroomLat = cr?.latitude || 14.0208;
+    const classroomLng = cr?.longitude || 99.5322;
+    const allowedRadius = cr?.allowed_radius_m || 100;
+
+    const R = 6371000;
+    const dLat = (classroomLat - studentLat) * Math.PI / 180;
+    const dLng = (classroomLng - studentLng) * Math.PI / 180;
+    const a = Math.sin(dLat/2)**2 + Math.cos(studentLat*Math.PI/180) *
+              Math.cos(classroomLat*Math.PI/180) * Math.sin(dLng/2)**2;
+    const distance = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
+    state.gpsResult = {
+      lat: studentLat,
+      lng: studentLng,
+      distance: Math.round(distance),
+      withinRadius: distance <= allowedRadius
+    };
+
+    if (state.gpsResult.withinRadius) {
+      state.step = 'confirm';
+    }
+    render();
+  } catch (err) {
+    showToast('ไม่สามารถเข้าถึง GPS ได้ กรุณาอนุญาตตำแหน่งที่ตั้ง');
+  }
+}
+
+// ============================================================
+// Submit Check-in
+// ============================================================
+async function submitCheckIn() {
+  const btn = document.getElementById('submit-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'กำลังบันทึก...'; }
+
+  const result = await apiCall('/check-in', {
+    method: 'POST',
+    body: JSON.stringify({
+      lineUserId: state.profile.userId,
+      token: state.token,
+      studentLat: state.gpsResult?.lat,
+      studentLng: state.gpsResult?.lng,
+      faceVerified: state.faceVerified,
+      faceConfidence: Math.round(state.faceConfidence * 10) / 10
+    })
+  });
+
+  if (result && result.success) {
+    state.step = 'success';
+    state.checkResult = result.record;
+  } else {
+    state.step = 'error';
+    state.errorMessage = result?.error || 'ไม่สามารถบันทึกได้';
+  }
+  render();
+}
+
+// ============================================================
+// Register
+// ============================================================
+async function registerStudent() {
+  const studentCode = document.getElementById('student-code')?.value?.trim();
+  const prefix = document.getElementById('student-prefix')?.value?.trim();
+  const firstName = document.getElementById('student-first-name')?.value?.trim();
+  const lastName = document.getElementById('student-last-name')?.value?.trim();
+  const level = document.getElementById('student-level')?.value?.trim();
+  const year = document.getElementById('student-year')?.value?.trim();
+  const room = document.getElementById('student-room')?.value?.trim();
+  const major = document.getElementById('student-major')?.value?.trim();
+
+  if (!studentCode) { showToast('กรุณากรอกรหัสนักศึกษา'); return; }
+  if (!prefix) { showToast('กรุณาเลือกคำนำหน้า'); return; }
+  if (!firstName) { showToast('กรุณากรอกชื่อ'); return; }
+  if (!lastName) { showToast('กรุณากรอกสกุล'); return; }
+  if (!level) { showToast('กรุณาเลือกระดับ'); return; }
+  if (!year) { showToast('กรุณาเลือกชั้นปี'); return; }
+  if (!room) { showToast('กรุณากรอกกลุ่ม/ห้อง'); return; }
+  if (!major) { showToast('กรุณากรอกสาขาวิชา'); return; }
+
+  const btn = document.getElementById('register-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'กำลังลงทะเบียน...'; }
+
+  const result = await apiCall('/register', {
+    method: 'POST',
+    body: JSON.stringify({
+      lineUserId: state.profile.userId,
+      lineDisplayName: state.profile.displayName,
+      studentCode,
+      prefix,
+      firstName,
+      lastName,
+      level,
+      year,
+      room,
+      major
+    })
+  });
+
+  if (btn) { btn.disabled = false; btn.textContent = 'ลงทะเบียน'; }
+
+  if (result && result.success) {
+    state.student = result.student || {
+      studentCode,
+      prefix,
+      firstName,
+      lastName,
+      name: `${prefix}${firstName} ${lastName}`,
+      level,
+      year,
+      room,
+      major,
+      group: `${level}.${year}/${room}`,
+      group_name: `${level}.${year}/${room}`
+    };
+    state.approvalStatus = result.approvalStatus || 'pending';
+    if (state.approvalStatus === 'approved') {
+      state.step = 'face-register';
+    } else {
+      state.step = 'pending-approval';
+    }
+    render();
+  } else {
+    showToast(result?.error || result?.message || 'ลงทะเบียนไม่สำเร็จ');
+  }
+}
+
+async function refreshApprovalStatus() {
+  if (!state.profile?.userId) return;
+  const profileRes = await apiCall(`/profile/${state.profile.userId}`);
+  if (profileRes && profileRes.registered && profileRes.approvalStatus === 'approved') {
+    state.student = profileRes.student;
+    state.approvalStatus = 'approved';
+    state.faceRegistered = profileRes.faceRegistered || false;
+    state.step = state.faceRegistered ? 'scan' : 'face-register';
+    showToast('ครูยืนยันแล้ว! ดำเนินการต่อได้');
+    render();
+  } else if (profileRes && profileRes.approvalStatus === 'pending') {
+    showToast('ยังรอครูยืนยันอยู่');
+  } else if (profileRes && profileRes.approvalStatus === 'rejected') {
+    state.step = 'register';
+    showToast('การลงทะเบียนถูกปฏิเสธ กรุณาลงทะเบียนใหม่');
+    render();
+  }
+}
+
+// ============================================================
+// Scan QR (ใช้ LIFF Scanner หรือกรอกมือ)
+// ============================================================
+async function scanQR() {
+  if (liff.isInClient()) {
+    try {
+      const result = await liff.scanCodeV2();
+      if (result?.value) {
+        // parse token จาก QR data (รูปแบบ ATT|TOKEN|TYPE|...)
+        const parts = result.value.split('|');
+        state.token = parts.length > 1 ? parts[1] : result.value;
+        await validateAndProceed();
+        render();
+        return;
+      }
+    } catch (err) {
+      console.warn('LIFF scanner failed, fallback to manual input');
+    }
+  }
+  // Fallback: กรอก token ด้วยมือ
+  const tokenInput = document.getElementById('token-input');
+  if (tokenInput?.value?.trim()) {
+    state.token = tokenInput.value.trim().toUpperCase();
+    await validateAndProceed();
+    render();
+  }
+}
+
+function manualTokenSubmit() {
+  const input = document.getElementById('token-input');
+  if (input?.value?.trim()) {
+    state.token = input.value.trim().toUpperCase();
+    validateAndProceed().then(() => render());
+  } else {
+    showToast('กรุณากรอก Token');
+  }
+}
+
+// ============================================================
+// Helpers
+// ============================================================
+function showToast(msg) {
+  const existing = document.querySelector('.toast');
+  if (existing) existing.remove();
+  const t = document.createElement('div');
+  t.className = 'toast';
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 3000);
+}
+
+function getTimeString() {
+  return new Date().toLocaleTimeString('th-TH', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+}
+
+function resetToScan() {
+  stopCamera();
+  state.step = 'scan';
+  state.token = null;
+  state.qrSession = null;
+  state.faceVerified = false;
+  state.gpsResult = null;
+  state.errorMessage = '';
+  state.leaveType = 'sick_leave';
+  state.leaveImage = null;
+  state.leaveRemark = '';
+  state.storedEmbedding = null;
+  render();
+}
+
+function closeApp() {
+  if (liff.isInClient()) {
+    liff.closeWindow();
+  } else {
+    resetToScan();
+  }
+}
+
+// ============================================================
+// Leave Request (แจ้งลาป่วย / ลากิจ)
+// ============================================================
+function chooseCheckIn() {
+  state.step = 'face';
+  render();
+}
+
+function chooseLeave() {
+  state.step = 'leave';
+  state.leaveType = 'sick_leave';
+  state.leaveImage = null;
+  state.leaveRemark = '';
+  render();
+}
+
+function selectLeaveType(type) {
+  state.leaveType = type;
+  render();
+}
+
+function onLeaveImageSelected(input) {
+  const file = input.files?.[0];
+  if (!file) return;
+
+  if (file.size > 5 * 1024 * 1024) {
+    showToast('ไฟล์ใหญ่เกินไป (สูงสุด 5MB)');
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    state.leaveImage = e.target.result;
+    render();
+  };
+  reader.readAsDataURL(file);
+}
+
+async function submitLeaveRequest() {
+  if (!state.leaveImage) {
+    showToast(state.leaveType === 'sick_leave'
+      ? 'กรุณาแนบรูปแชตแจ้งครูที่ปรึกษา'
+      : 'กรุณาแนบรูปใบลากิจ');
+    return;
+  }
+
+  const btn = document.getElementById('leave-submit-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'กำลังบันทึก...'; }
+
+  const remarkInput = document.getElementById('leave-remark');
+  state.leaveRemark = remarkInput?.value?.trim() || '';
+
+  const result = await apiCall('/leave-request', {
+    method: 'POST',
+    body: JSON.stringify({
+      lineUserId: state.profile.userId,
+      token: state.token,
+      leaveType: state.leaveType,
+      leaveImage: state.leaveImage,
+      remark: state.leaveRemark,
+    })
+  });
+
+  if (result && result.success) {
+    state.step = 'success';
+    state.checkResult = {
+      checkType: state.leaveType,
+      subjectName: state.qrSession?.subject_name || '',
+      checkedAt: getTimeString(),
+      status: state.leaveType,
+    };
+  } else {
+    state.step = 'error';
+    state.errorMessage = result?.error || 'ไม่สามารถบันทึกการลาได้';
+  }
+  render();
+}
+
+// ============================================================
+// Render
+// ============================================================
+function render() {
+  const app = document.getElementById('app');
+  const steps = state.step === 'leave' ? ['scan','choose','leave'] : ['scan','choose','face','gps','confirm'];
+  const currentIdx = steps.indexOf(state.step);
+
+  let stepsHTML = '';
+  if (!['register','face-register','loading','success','error','pending-approval'].includes(state.step)) {
+    stepsHTML = `<div class="steps">${steps.map((s,i) => 
+      `<div class="step-dot ${i < currentIdx ? 'done' : ''} ${i === currentIdx ? 'active' : ''}"></div>`
+    ).join('')}</div>`;
+  }
+
+  let headerHTML = `
+    <div class="header">
+      <h1>ระบบเช็คชื่อผู้เรียน</h1>
+      <p>วิทยาลัยอาชีวศึกษากาญจนบุรี</p>
+    </div>`;
+
+  let studentCardHTML = '';
+  if (state.student && !['register','loading','pending-approval'].includes(state.step)) {
+    const studentName = state.student.name
+      || `${state.student.prefix || ''}${state.student.firstName || ''} ${state.student.lastName || ''}`.trim()
+      || state.student.studentCode
+      || state.student.student_code
+      || 'ผู้เรียน';
+    const studentCode = state.student.studentCode || state.student.student_code || '';
+    const groupText = state.student.group
+      || state.student.group_name
+      || [state.student.level, state.student.year ? `ปี ${state.student.year}` : '', state.student.room ? `ห้อง ${state.student.room}` : ''].filter(Boolean).join(' ');
+    const majorText = state.student.major ? ` | ${state.student.major}` : '';
+    const initial = (state.student.firstName || studentName || '?').charAt(0);
+    studentCardHTML = `
+      <div class="student-card">
+        <div class="avatar">${initial}</div>
+        <div class="student-info">
+          <div class="name">${studentName}</div>
+          <div class="detail">${studentCode}${groupText ? ` | ${groupText}` : ''}${majorText}</div>
+        </div>
+      </div>`;
+  }
+
+  let contentHTML = '';
+
+  switch (state.step) {
+    // ---- REGISTER ----
+    case 'register':
+      contentHTML = `
+        <div class="panel">
+          <div style="text-align:center">
+            <div style="font-size:40px;margin-bottom:12px;opacity:.3">👤</div>
+            <div class="panel-title">ลงทะเบียนผู้เรียน</div>
+            <div class="panel-desc">กรอกข้อมูลนักเรียนเพื่อผูกกับบัญชี LINE ครูจะตรวจสอบและยืนยันก่อนใช้งาน</div>
+            ${state.profile ? `<p style="font-size:12px;color:var(--text3);margin-bottom:12px">LINE: ${state.profile.displayName}</p>` : ''}
+          </div>
+
+          <input id="student-code" class="input-field" type="text" placeholder="รหัสนักศึกษา เช่น 6701"
+            inputmode="numeric" autocomplete="off" style="text-align:center;font-size:18px;letter-spacing:2px">
+
+          <select id="student-prefix" class="input-field">
+            <option value="">เลือกคำนำหน้า</option>
+            <option value="นาย">นาย</option>
+            <option value="นางสาว">นางสาว</option>
+            <option value="นาง">นาง</option>
+          </select>
+
+          <input id="student-first-name" class="input-field" type="text" placeholder="ชื่อ">
+          <input id="student-last-name" class="input-field" type="text" placeholder="สกุล">
+
+          <select id="student-level" class="input-field">
+            <option value="">เลือกระดับ</option>
+            <option value="ปวช.">ปวช.</option>
+            <option value="ปวส.">ปวส.</option>
+          </select>
+
+          <select id="student-year" class="input-field">
+            <option value="">เลือกชั้นปี</option>
+            <option value="1">ปี 1</option>
+            <option value="2">ปี 2</option>
+            <option value="3">ปี 3</option>
+          </select>
+
+          <input id="student-room" class="input-field" type="text" placeholder="กลุ่ม/ห้อง เช่น 1, 2, 3 หรือ 1/1">
+          <input id="student-major" class="input-field" type="text" placeholder="สาขาวิชา เช่น การบัญชี">
+
+          <button id="register-btn" class="btn btn-primary" onclick="registerStudent()">ส่งคำขอลงทะเบียน</button>
+        </div>`;
+      break;
+
+    case 'pending-approval':
+      contentHTML = `
+        <div class="panel" style="text-align:center">
+          <div style="font-size:48px;margin-bottom:12px">⏳</div>
+          <div class="panel-title">รอครูยืนยันการลงทะเบียน</div>
+          <div class="panel-desc" style="margin-bottom:20px">
+            ระบบได้รับข้อมูลของคุณแล้ว<br>
+            ครูจะตรวจสอบและกดยืนยันก่อนจึงจะเช็คชื่อได้
+          </div>
+          ${state.student ? `
+            <div style="background:var(--surface2);border-radius:var(--radius-sm);padding:14px;text-align:left;font-size:13px;margin-bottom:16px">
+              <div><strong>รหัส:</strong> ${state.student.studentCode || state.student.student_code || '-'}</div>
+              <div><strong>ชื่อ:</strong> ${state.student.name || `${state.student.prefix || ''}${state.student.firstName || ''} ${state.student.lastName || ''}`.trim()}</div>
+              <div><strong>ห้อง:</strong> ${state.student.group || state.student.group_name || '-'}</div>
+            </div>
+          ` : ''}
+          <button class="btn btn-primary" onclick="refreshApprovalStatus()">ตรวจสอบสถานะ</button>
+          <button class="btn btn-secondary" onclick="state.step='register';render()" style="margin-top:10px">แก้ไขข้อมูล</button>
+        </div>`;
+      break;
+
+    // ---- FACE REGISTER (ลงทะเบียนใบหน้า) ----
+    case 'face-register':
+      contentHTML = `
+        <div class="panel" style="text-align:center">
+          ${state.faceRegStep === 3 ? `
+            <!-- สำเร็จ -->
+            <div class="status-icon success">✓</div>
+            <div class="panel-title" style="color:var(--green-dark)">ลงทะเบียนใบหน้าสำเร็จ!</div>
+            <div class="panel-desc">ระบบจดจำใบหน้าของคุณแล้ว</div>
+            ${state.faceRegPhoto ? `<img src="${state.faceRegPhoto}" style="width:120px;height:120px;border-radius:50%;object-fit:cover;margin-bottom:16px;border:3px solid var(--green)">` : ''}
+            <button class="btn btn-primary" onclick="finishFaceRegistration()">ไปหน้าเช็คชื่อ</button>
+          ` : state.faceRegStep === 2 ? `
+            <!-- กำลังบันทึก -->
+            <div class="spinner" style="margin:0 auto 12px"></div>
+            <div class="panel-title">กำลังบันทึกข้อมูลใบหน้า...</div>
+          ` : `
+            <!-- ถ่ายรูป -->
+            <div style="font-size:40px;margin-bottom:12px">📸</div>
+            <div class="panel-title">ลงทะเบียนใบหน้า</div>
+            <div class="panel-desc">ถ่ายรูปหน้าตรงเพื่อใช้ยืนยันตัวตนตอนเช็คชื่อ<br>
+              <span style="color:var(--amber);font-weight:500">หันหน้าตรง · อยู่ในที่มีแสง · ไม่ใส่แว่นกันแดด</span>
+            </div>
+
+            <div class="camera-wrap">
+              ${state.cameraStream ? `
+                <video id="camera-video" autoplay playsinline muted></video>
+                <div class="face-guide"></div>
+                <button class="capture-btn" onclick="captureFaceRegistration()">
+                  <div class="inner"></div>
+                </button>
+              ` : `
+                <div class="camera-overlay" style="background:#222">
+                  <div class="icon" style="opacity:.3">◎</div>
+                  <button class="btn-open-camera" onclick="startFaceRegistration()">เปิดกล้อง</button>
+                </div>
+              `}
+            </div>
+
+            ${state.faceRegistered ? `
+              <button class="btn btn-secondary" onclick="finishFaceRegistration()" style="margin-top:8px">ข้ามไป (ลงทะเบียนแล้ว)</button>
+            ` : ''}
+          `}
+        </div>`;
+      break;
+
+    // ---- SCAN QR ----
+    case 'scan':
+      contentHTML = `
+        <div class="panel" style="text-align:center">
+          <div style="font-size:40px;margin-bottom:12px;opacity:.25">⊞</div>
+          <div class="panel-title">สแกน QR Code</div>
+          <div class="panel-desc">สแกนจากข้อความในไลน์กลุ่ม หรือกรอก Token</div>
+          ${state.errorMessage ? `<p style="color:var(--red);font-size:12px;margin-bottom:12px">${state.errorMessage}</p>` : ''}
+          ${liff.isInClient() ? `
+            <button class="btn btn-primary" onclick="scanQR()" style="margin-bottom:12px">
+              เปิดสแกนเนอร์ QR
+            </button>
+            <p style="font-size:12px;color:var(--text3);margin-bottom:8px">หรือกรอก Token ด้วยมือ</p>
+          ` : ''}
+          <div style="display:flex;gap:8px">
+            <input id="token-input" class="input-field" type="text" placeholder="Token เช่น A1B2C3D4"
+              style="text-transform:uppercase;font-family:monospace;font-size:16px;letter-spacing:2px;text-align:center;margin-bottom:0"
+              maxlength="8" autocomplete="off">
+            <button class="btn btn-primary" onclick="manualTokenSubmit()" style="width:auto;padding:12px 18px;flex-shrink:0">ตรวจสอบ</button>
+          </div>
+          <button class="btn btn-secondary" onclick="state.step='face-register';render()" style="margin-top:12px;font-size:12px">
+            📸 ลงทะเบียนใบหน้าใหม่
+          </button>
+        </div>`;
+      break;
+
+    // ---- CHOOSE ACTION ----
+    case 'choose':
+      const isCI = state.qrSession?.qr_type === 'check_in';
+      contentHTML = `
+        <div class="panel" style="text-align:center">
+          <span class="qr-badge ${state.qrSession?.qr_type || ''}">
+            ${isCI ? '📋 เช็คชื่อเข้าเรียน' : '📋 เช็คชื่อหลังเรียน'}
+          </span>
+          <div class="panel-title">เลือกการดำเนินการ</div>
+          <div class="panel-desc">${state.qrSession?.subject_name || ''}</div>
+
+          <div class="action-cards">
+            <div class="action-card checkin" onclick="chooseCheckIn()">
+              <div class="ac-icon">✅</div>
+              <div>
+                <div class="ac-title">เช็คชื่อ${isCI ? 'เข้าเรียน' : 'หลังเรียน'}</div>
+                <div class="ac-desc">สแกนใบหน้า + ตรวจพิกัด GPS</div>
+              </div>
+            </div>
+            <div class="action-card leave" onclick="chooseLeave()">
+              <div class="ac-icon">📋</div>
+              <div>
+                <div class="ac-title">แจ้งลาป่วย / ลากิจ</div>
+                <div class="ac-desc">แนบหลักฐานการลา ส่งให้ครูอนุมัติ</div>
+              </div>
+            </div>
+          </div>
+        </div>`;
+      break;
+
+    // ---- LEAVE REQUEST ----
+    case 'leave':
+      const leaveLabel = state.leaveType === 'sick_leave' ? 'ลาป่วย' : 'ลากิจ';
+      const imageHint = state.leaveType === 'sick_leave'
+        ? 'แนบรูปแชตที่แจ้งครูที่ปรึกษาว่าลาป่วย'
+        : 'แนบรูปใบลากิจ';
+      contentHTML = `
+        <div class="panel">
+          <div style="text-align:center">
+            <div class="panel-title">📋 แจ้งลา — ${state.qrSession?.subject_name || ''}</div>
+            <div class="panel-desc">เลือกประเภทและแนบหลักฐาน</div>
+          </div>
+
+          <div class="leave-types">
+            <button class="leave-type ${state.leaveType === 'sick_leave' ? 'selected' : ''}"
+              onclick="selectLeaveType('sick_leave')">🏥 ลาป่วย</button>
+            <button class="leave-type ${state.leaveType === 'personal_leave' ? 'selected' : ''}"
+              onclick="selectLeaveType('personal_leave')">📝 ลากิจ</button>
+          </div>
+
+          <div style="font-size:13px;font-weight:600;margin-bottom:6px">${imageHint}</div>
+          <div class="upload-area" onclick="this.querySelector('input')?.click()">
+            ${state.leaveImage
+              ? `<img src="${state.leaveImage}" alt="หลักฐาน">
+                 <p style="margin-top:8px;font-size:12px;color:var(--green)">✓ แนบรูปแล้ว — กดเพื่อเปลี่ยน</p>`
+              : `<div style="font-size:36px;opacity:.25;margin-bottom:8px">📷</div>
+                 <p style="font-size:13px;color:var(--text2)">กดเพื่อถ่ายรูป / เลือกรูป</p>
+                 <p style="font-size:11px;color:var(--text3);margin-top:4px">รองรับ JPG, PNG (สูงสุด 5MB)</p>`}
+            <input type="file" accept="image/*" capture="environment" onchange="onLeaveImageSelected(this)">
+          </div>
+
+          <div style="margin-bottom:16px">
+            <div style="font-size:13px;font-weight:600;margin-bottom:6px">หมายเหตุ (ถ้ามี)</div>
+            <input id="leave-remark" class="input-field" type="text" placeholder="เช่น ไข้หวัด, นัดพบแพทย์"
+              style="margin-bottom:0" value="${state.leaveRemark}">
+          </div>
+
+          <button id="leave-submit-btn" class="btn btn-primary" onclick="submitLeaveRequest()"
+            ${!state.leaveImage ? 'disabled' : ''}>
+            ส่งแจ้ง${leaveLabel}
+          </button>
+          <button class="btn btn-secondary" onclick="state.step='choose';render()" style="margin-top:8px">ย้อนกลับ</button>
+        </div>`;
+      break;
+
+    // ---- FACE VERIFICATION ----
+    case 'face':
+      const isCheckIn = state.qrSession?.qr_type === 'check_in';
+      contentHTML = `
+        <div class="panel" style="text-align:center">
+          <span class="qr-badge ${state.qrSession?.qr_type || ''}">
+            ${isCheckIn ? '📋 เช็คชื่อเข้าเรียน' : '📋 เช็คชื่อหลังเรียน'}
+          </span>
+          <div class="panel-title">ยืนยันตัวตนด้วยใบหน้า</div>
+          <div class="panel-desc">${state.qrSession?.subject_name || ''}</div>
+          
+          <div class="camera-wrap">
+            ${state.cameraStream ? `
+              <video id="camera-video" autoplay playsinline muted></video>
+              <div class="face-guide"></div>
+              <button class="capture-btn" onclick="captureAndVerify()">
+                <div class="inner"></div>
+              </button>
+            ` : state.faceVerified ? `
+              <div class="camera-overlay verified">
+                <div class="icon">✓</div>
+                <div class="label">ยืนยันตัวตนสำเร็จ</div>
+                <div class="label" style="font-size:11px;opacity:.7">${state.faceConfidence.toFixed(1)}%</div>
+              </div>
+            ` : `
+              <div class="camera-overlay" style="background:#222">
+                <div class="icon" style="opacity:.3">◎</div>
+                <button class="btn-open-camera" onclick="startCamera()">เปิดกล้อง</button>
+              </div>
+            `}
+          </div>
+        </div>`;
+      break;
+
+    // ---- GPS ----
+    case 'gps':
+      const gps = state.gpsResult;
+      const gpsPct = gps ? Math.min(gps.distance / 200, 1) : 0;
+      const userTop = gps ? 50 - gpsPct * 35 : 50;
+      const userLeft = gps ? 50 + gpsPct * 20 : 50;
+      const userClass = gps ? (gps.withinRadius ? 'pass' : 'fail') : '';
+
+      contentHTML = `
+        <div class="panel" style="text-align:center">
+          <div class="panel-title">ตรวจสอบพิกัด GPS</div>
+          <div class="panel-desc">ตรวจสอบว่าคุณอยู่ในบริเวณห้องเรียน</div>
+
+          <div class="gps-visual">
+            <div class="gps-center"></div>
+            <div class="gps-radius"></div>
+            ${gps ? `<div class="gps-user ${userClass}" style="top:${userTop}%;left:${userLeft}%;transform:translate(-50%,-50%)"></div>` : ''}
+          </div>
+
+          ${gps ? `
+            <p style="font-size:13px;font-weight:600;color:${gps.withinRadius ? 'var(--green)' : 'var(--red)'}; margin-bottom:4px">
+              ${gps.withinRadius ? '✓ อยู่ในรัศมีห้องเรียน' : '✗ อยู่นอกรัศมีห้องเรียน'}
+            </p>
+            <p style="font-size:12px;color:var(--text2);margin-bottom:16px">ระยะห่าง ${gps.distance} เมตร</p>
+            ${!gps.withinRadius ? `<button class="btn btn-secondary" onclick="checkGPS()" style="margin-bottom:8px">ตรวจสอบอีกครั้ง</button>` : ''}
+          ` : `
+            <button class="btn btn-primary" onclick="checkGPS()">ตรวจสอบพิกัด</button>
+          `}
+        </div>`;
+      break;
+
+    // ---- CONFIRM ----
+    case 'confirm':
+      contentHTML = `
+        <div class="panel">
+          <div style="text-align:center;margin-bottom:16px">
+            <div style="font-size:36px;margin-bottom:8px">✓</div>
+            <div class="panel-title">ผ่านการตรวจสอบทั้งหมด</div>
+          </div>
+
+          <div class="check-list">
+            <div class="check-item">
+              <div class="check-icon pass">✓</div>
+              <span>QR Code ถูกต้อง — ${state.token}</span>
+            </div>
+            <div class="check-item">
+              <div class="check-icon pass">✓</div>
+              <span>ใบหน้ายืนยันแล้ว — ${state.faceConfidence.toFixed(1)}%</span>
+            </div>
+            <div class="check-item">
+              <div class="check-icon pass">✓</div>
+              <span>พิกัดถูกต้อง — ${state.gpsResult?.distance || 0}m</span>
+            </div>
+          </div>
+
+          <div style="margin-bottom:16px">
+            <div class="info-row"><span class="label">ประเภท</span><span class="value">${state.qrSession?.qr_type === 'check_in' ? 'เข้าเรียน' : 'หลังเรียน'}</span></div>
+            <div class="info-row"><span class="label">รายวิชา</span><span class="value">${state.qrSession?.subject_name || ''}</span></div>
+            <div class="info-row"><span class="label">เวลา</span><span class="value">${getTimeString()}</span></div>
+          </div>
+
+          <button id="submit-btn" class="btn btn-primary" onclick="submitCheckIn()">ยืนยันบันทึกการเช็คชื่อ</button>
+        </div>`;
+      break;
+
+    // ---- SUCCESS ----
+    case 'success':
+      const cr = state.checkResult || {};
+      const isLeave = cr.status === 'sick_leave' || cr.status === 'personal_leave';
+      const successLabel = isLeave
+        ? (cr.status === 'sick_leave' ? 'แจ้งลาป่วยสำเร็จ' : 'แจ้งลากิจสำเร็จ')
+        : (cr.checkType === 'check_out' ? 'เช็คชื่อออกเรียนสำเร็จ' : 'บันทึกสำเร็จ');
+      const successType = isLeave
+        ? (cr.status === 'sick_leave' ? '🏥 ลาป่วย' : '📝 ลากิจ')
+        : (cr.checkType === 'check_in' ? 'เช็คชื่อเข้าเรียน' : 'เช็คชื่อหลังเรียน');
+      
+      // สรุปชั่วโมงเรียน (เฉพาะ check-out)
+      const atSummary = cr.attendanceSummary;
+      let summaryHTML = '';
+      if (atSummary) {
+        const passColor = atSummary.passed ? 'var(--green)' : 'var(--red)';
+        const passIcon = atSummary.passed ? '✅' : '❌';
+        const passText = atSummary.passed ? 'ผ่านเกณฑ์ 80%' : 'ไม่ผ่านเกณฑ์ 80%';
+        summaryHTML = `
+          <div style="background:var(--surface2);border-radius:var(--radius-sm);padding:16px;margin:12px 0 16px;text-align:left">
+            <div style="font-size:14px;font-weight:600;margin-bottom:10px;text-align:center">📊 สรุปเวลาเรียน</div>
+            <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px">
+              <span style="color:var(--text2)">เวลาตามตาราง</span>
+              <span style="font-weight:600">${atSummary.scheduledTime}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px">
+              <span style="color:var(--text2)">เข้าเรียน</span>
+              <span style="font-weight:500">${atSummary.checkInAt} น.</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px">
+              <span style="color:var(--text2)">ออกเรียน</span>
+              <span style="font-weight:500">${atSummary.checkOutAt} น.</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:8px">
+              <span style="color:var(--text2)">เวลาเรียนจริง</span>
+              <span style="font-weight:600">${atSummary.actualTime}</span>
+            </div>
+            <div style="height:1px;background:var(--border);margin:8px 0"></div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">
+              <span style="font-size:14px;font-weight:600;color:${passColor}">${passIcon} ${passText}</span>
+              <span style="font-size:20px;font-weight:700;color:${passColor}">${atSummary.percent}%</span>
+            </div>
+          </div>`;
+      }
+      
+      contentHTML = `
+        <div class="panel" style="text-align:center">
+          <div class="status-icon success">${isLeave ? '📋' : '✓'}</div>
+          <div class="panel-title" style="color:var(--green-dark);font-size:17px">${successLabel}</div>
+          <p style="font-size:13px;color:var(--text2);margin:4px 0">${successType}</p>
+          <p style="font-size:12px;color:var(--text3);margin-bottom:${atSummary ? '4px' : '16px'}">${cr.subjectName || ''} — ${cr.checkedAt || getTimeString()}</p>
+          
+          ${cr.status === 'late' ? `<p style="color:var(--amber);font-size:12px;font-weight:600;margin-bottom:12px">สถานะ: สาย</p>` : ''}
+          ${isLeave ? `<p style="color:var(--amber);font-size:12px;margin-bottom:12px">รอครูผู้สอนตรวจสอบ</p>` : ''}
+          ${summaryHTML}
+
+          <button class="btn btn-secondary" onclick="closeApp()" style="margin-bottom:8px">ปิด</button>
+        </div>`;
+      break;
+
+    // ---- ERROR ----
+    case 'error':
+      contentHTML = `
+        <div class="panel" style="text-align:center">
+          <div class="status-icon error">✗</div>
+          <div class="panel-title" style="color:var(--red)">เกิดข้อผิดพลาด</div>
+          <p style="font-size:13px;color:var(--text2);margin:8px 0 20px">${state.errorMessage}</p>
+          <button class="btn btn-secondary" onclick="resetToScan()">ลองใหม่</button>
+        </div>`;
+      break;
+  }
+
+  app.innerHTML = headerHTML + studentCardHTML + stepsHTML + contentHTML;
+}
+
+// ============================================================
+// Start
+// ============================================================
+window.addEventListener('load', initApp);
+</script>
+</body>
+</html>

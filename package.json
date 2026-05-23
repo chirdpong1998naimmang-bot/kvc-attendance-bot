@@ -1,0 +1,26 @@
+{
+  "name": "kvc-attendance-bot",
+  "version": "1.1.0",
+  "description": "ระบบเช็คชื่อผู้เรียน วิทยาลัยอาชีวศึกษากาญจนบุรี - LINE Bot + LIFF (รวมชุด 18-5-69)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "db:init": "node db-init.js"
+  },
+  "dependencies": {
+    "@line/bot-sdk": "^9.6.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.0",
+    "exceljs": "^4.4.0",
+    "express": "^4.21.0",
+    "helmet": "^8.0.0",
+    "node-cron": "^3.0.3",
+    "pg": "^8.13.0",
+    "qrcode": "^1.5.4",
+    "uuid": "^10.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  }
+}

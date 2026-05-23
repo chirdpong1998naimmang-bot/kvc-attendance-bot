@@ -1,0 +1,1638 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KVC Teacher Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#f5f6fa;
+  --surface:#ffffff;
+  --surface2:#f0f2f8;
+  --surface3:#e4e7f1;
+  --border:#dfe3ed;
+  --border-light:#c9cfe0;
+  --text:#1e2132;
+  --text2:#6b7194;
+  --text3:#9ba1be;
+  --accent:#4f6ef7;
+  --accent-hover:#3a56d4;
+  --accent-light:#e8edff;
+  --accent2:#118ab2;
+  --accent3:#ef476f;
+  --accent4:#ffd166;
+  --danger:#ef4444;
+  --success:#22c55e;
+  --warning:#f59e0b;
+  --sick:#f97316;
+  --personal:#8b5cf6;
+  --radius:12px;
+  --radius-sm:8px;
+  --shadow-sm:0 1px 3px rgba(0,0,0,0.05);
+  --shadow-md:0 4px 12px rgba(0,0,0,0.08);
+  --shadow-lg:0 8px 30px rgba(0,0,0,0.12);
+  --font:'IBM Plex Sans Thai',sans-serif;
+  --mono:'JetBrains Mono',monospace;
+
+  /* Sidebar dark */
+  --sidebar-bg:#1a1d2e;
+  --sidebar-hover:#252942;
+  --sidebar-active:#4f6ef7;
+  --sidebar-text:#a4a9c8;
+  --sidebar-text-active:#ffffff;
+}
+html{font-size:14px}
+body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden}
+
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:var(--surface2)}
+::-webkit-scrollbar-thumb{background:var(--border-light);border-radius:3px}
+
+/* ── Layout ── */
+.app{display:flex;min-height:100vh}
+
+/* ── Sidebar ── */
+.sidebar{
+  width:240px;background:var(--sidebar-bg);
+  position:fixed;left:0;top:0;bottom:0;
+  display:flex;flex-direction:column;z-index:100;
+  transition:transform .3s ease;
+}
+.sidebar-brand{padding:22px 20px;border-bottom:1px solid rgba(255,255,255,.06)}
+.sidebar-brand h1{font-size:17px;font-weight:700;color:#fff;display:flex;align-items:center;gap:8px}
+.sidebar-brand p{font-size:11px;color:var(--sidebar-text);margin-top:3px}
+.sidebar-nav{flex:1;padding:12px 10px;display:flex;flex-direction:column;gap:2px;overflow-y:auto}
+.nav-item{
+  display:flex;align-items:center;gap:11px;
+  padding:11px 14px;border-radius:var(--radius-sm);
+  cursor:pointer;color:var(--sidebar-text);
+  font-size:13px;font-weight:500;transition:all .2s;
+  border:none;background:none;width:100%;text-align:left;
+  font-family:var(--font);
+}
+.nav-item:hover{background:var(--sidebar-hover);color:#d0d4f0}
+.nav-item.active{background:var(--sidebar-active);color:#fff}
+.nav-item .icon{font-size:1.1rem;width:22px;text-align:center;flex-shrink:0}
+.nav-item .label{white-space:nowrap}
+
+.sidebar-footer{padding:16px 18px;border-top:1px solid rgba(255,255,255,.06)}
+.teacher-info{display:flex;align-items:center;gap:10px}
+.teacher-avatar{width:34px;height:34px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:13px}
+.teacher-name{color:#fff;font-size:12px;font-weight:600}
+.teacher-role{color:var(--sidebar-text);font-size:10px}
+
+/* ── Main ── */
+.main-area{margin-left:240px;flex:1;min-height:100vh;display:flex;flex-direction:column}
+
+/* ── Topbar ── */
+.topbar{
+  background:var(--surface);border-bottom:1px solid var(--border);
+  padding:0 28px;height:56px;display:flex;align-items:center;justify-content:space-between;
+  position:sticky;top:0;z-index:50;
+}
+.topbar h2{font-size:18px;font-weight:700;display:flex;align-items:center;gap:8px}
+.topbar-right{display:flex;align-items:center;gap:14px}
+.status-dot{width:8px;height:8px;border-radius:50%;background:var(--success);box-shadow:0 0 8px var(--success);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+.topbar-date{font-size:12px;color:var(--text2)}
+
+.content{flex:1;padding:24px 28px;overflow-y:auto}
+
+/* ── Cards ── */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow-sm)}
+.card-header{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.75rem}
+.card-header h2{font-size:15px;font-weight:700}
+.card-body{padding:20px}
+
+/* ── Tables ── */
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;padding:10px 14px;font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;background:var(--surface2);border-bottom:1px solid var(--border);white-space:nowrap}
+td{padding:11px 14px;border-bottom:1px solid var(--border);font-size:13px;vertical-align:middle}
+tr:hover td{background:#fafbfe}
+tr:last-child td{border-bottom:none}
+
+/* ── Forms ── */
+.form-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:14px}
+.form-group{display:flex;flex-direction:column;gap:4px}
+.form-group label{font-size:12px;font-weight:600;color:var(--text2)}
+input,select,textarea{
+  background:#fff;border:1px solid var(--border);border-radius:var(--radius-sm);
+  padding:8px 12px;color:var(--text);font-family:var(--font);font-size:13px;
+  transition:border-color .2s;outline:none;
+}
+input:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(79,110,247,.1)}
+textarea{resize:vertical;min-height:60px}
+
+/* ── Buttons ── */
+.btn{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:8px 16px;border:none;border-radius:var(--radius-sm);
+  font-family:var(--font);font-size:13px;font-weight:600;
+  cursor:pointer;transition:all .2s;text-decoration:none;
+}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-primary:hover{background:var(--accent-hover);transform:translateY(-1px)}
+.btn-secondary{background:var(--surface2);color:var(--text);border:1px solid var(--border)}
+.btn-secondary:hover{background:var(--surface3)}
+.btn-danger{background:var(--danger);color:#fff}
+.btn-danger:hover{opacity:.9}
+.btn-warning{background:var(--accent4);color:#1e2132}
+.btn-sm{padding:5px 10px;font-size:12px}
+.btn-icon{padding:6px;width:30px;height:30px;justify-content:center}
+.btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
+.btn-group{display:flex;gap:6px;flex-wrap:wrap}
+
+/* ── Badges ── */
+.badge{display:inline-flex;padding:3px 10px;border-radius:99px;font-size:12px;font-weight:600}
+.badge-success{background:rgba(34,197,94,.12);color:var(--success)}
+.badge-danger{background:rgba(239,68,68,.12);color:var(--danger)}
+.badge-warning{background:rgba(245,158,11,.12);color:var(--warning)}
+.badge-info{background:rgba(79,110,247,.10);color:var(--accent)}
+.badge-sick{background:rgba(249,115,22,.12);color:var(--sick)}
+.badge-personal{background:rgba(139,92,246,.12);color:var(--personal)}
+
+/* ── Stats ── */
+.stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:14px;margin-bottom:20px}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;position:relative;overflow:hidden;box-shadow:var(--shadow-sm)}
+.stat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px}
+.stat-card:nth-child(1)::before{background:var(--accent)}
+.stat-card:nth-child(2)::before{background:var(--success)}
+.stat-card:nth-child(3)::before{background:var(--warning)}
+.stat-card:nth-child(4)::before{background:var(--danger)}
+.stat-card:nth-child(5)::before{background:var(--sick)}
+.stat-card:nth-child(6)::before{background:var(--personal)}
+.stat-label{font-size:11px;color:var(--text3);font-weight:500;text-transform:uppercase;letter-spacing:.3px;margin-bottom:4px}
+.stat-value{font-size:1.6rem;font-weight:700;font-family:var(--mono)}
+
+/* ── Modal ── */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:200;padding:1rem;backdrop-filter:blur(3px)}
+.modal{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);width:100%;max-width:560px;max-height:90vh;overflow-y:auto;box-shadow:var(--shadow-lg)}
+.modal-header{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.modal-header h3{font-size:15px;font-weight:700}
+.modal-body{padding:20px}
+.modal-footer{padding:14px 20px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px}
+
+/* ── Loading & Empty ── */
+.loading{display:flex;align-items:center;justify-content:center;padding:3rem;color:var(--text2)}
+.spinner{width:22px;height:22px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;margin-right:10px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.empty{text-align:center;padding:3rem;color:var(--text3);font-size:13px}
+
+/* ── Toast ── */
+.toast-container{position:fixed;top:66px;right:1rem;z-index:300;display:flex;flex-direction:column;gap:8px}
+.toast{padding:12px 18px;border-radius:var(--radius-sm);font-size:13px;font-weight:500;box-shadow:var(--shadow-lg);animation:slideIn .3s ease;color:#fff}
+.toast-success{background:var(--success)}
+.toast-error{background:var(--danger)}
+@keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
+
+/* ── Camera ── */
+.camera-container{position:relative;border-radius:var(--radius);overflow:hidden;background:#000;aspect-ratio:4/3;max-width:400px}
+.camera-container video,.camera-container canvas{width:100%;height:100%;object-fit:cover;display:block}
+.camera-controls{display:flex;gap:8px;margin-top:.75rem}
+
+/* ── Filter bar ── */
+.filter-bar{display:flex;gap:.75rem;flex-wrap:wrap;align-items:center}
+.filter-bar input,.filter-bar select{max-width:220px}
+
+/* ── QR ── */
+.qr-options{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
+.qr-card{background:var(--surface2);border:1.5px solid var(--border);border-radius:var(--radius);padding:18px;transition:all .2s;cursor:pointer}
+.qr-card:hover{border-color:var(--accent);transform:translateY(-2px);box-shadow:var(--shadow-md)}
+.qr-card h4{margin-bottom:6px;font-size:14px}
+
+/* ── Attendance status buttons ── */
+.att-btn-group{display:flex;gap:4px;flex-wrap:wrap}
+.att-btn{
+  padding:4px 10px;border-radius:99px;font-size:12px;font-weight:600;
+  cursor:pointer;border:1.5px solid var(--border);background:transparent;
+  color:var(--text2);transition:all .15s;font-family:var(--font);
+}
+.att-btn.selected-present{background:rgba(34,197,94,.12);color:var(--success);border-color:var(--success)}
+.att-btn.selected-absent{background:rgba(239,68,68,.12);color:var(--danger);border-color:var(--danger)}
+.att-btn.selected-late{background:rgba(245,158,11,.12);color:var(--warning);border-color:var(--warning)}
+.att-btn.selected-sick{background:rgba(249,115,22,.12);color:var(--sick);border-color:var(--sick)}
+.att-btn.selected-personal{background:rgba(139,92,246,.12);color:var(--personal);border-color:var(--personal)}
+
+/* ── Attendance text ── */
+.att-present{color:var(--success)}
+.att-absent{color:var(--danger)}
+.att-late{color:var(--warning)}
+.att-sick{color:var(--sick)}
+.att-personal{color:var(--personal)}
+
+/* ── Mobile toggle ── */
+.menu-toggle{display:none;background:none;border:none;cursor:pointer;color:var(--text);padding:4px}
+.sidebar-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.3);z-index:99}
+.sidebar-backdrop.show{display:block}
+
+/* ── Responsive ── */
+@media(max-width:800px){
+  .sidebar{transform:translateX(-100%)}
+  .sidebar.open{transform:translateX(0)}
+  .main-area{margin-left:0}
+  .menu-toggle{display:block}
+  .content{padding:16px}
+  .topbar{padding:0 16px}
+  .stats-row{grid-template-columns:repeat(2,1fr)}
+  .form-grid{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useCallback, useRef, useMemo } = React;
+
+// ─── Config ───
+const API = 'https://kvc-attendance-bot.onrender.com';
+
+// ─── Toast System ───
+let toastId = 0;
+function ToastContainer({ toasts, removeToast }) {
+  return (
+    <div className="toast-container">
+      {toasts.map(t => (
+        <div key={t.id} className={`toast toast-${t.type}`} onClick={() => removeToast(t.id)}>
+          {t.type === 'success' ? '✓' : '✕'} {t.msg}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function useToast() {
+  const [toasts, setToasts] = useState([]);
+  const addToast = useCallback((msg, type = 'success') => {
+    const id = ++toastId;
+    setToasts(prev => [...prev, { id, msg, type }]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3500);
+  }, []);
+  const removeToast = useCallback(id => setToasts(prev => prev.filter(t => t.id !== id)), []);
+  return { toasts, addToast, removeToast };
+}
+
+function useApi(path) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const r = await fetch(`${API}${path}`);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const json = await r.json();
+      setData(json.data || json);
+      setError(null);
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }, [path]);
+  useEffect(() => { load(); }, [load]);
+  return { data, loading, error, reload: load, setData };
+}
+
+// ─── Modal ───
+function Modal({ title, onClose, children, footer }) {
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <h3>{title}</h3>
+          <button className="btn btn-icon btn-secondary" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body">{children}</div>
+        {footer && <div className="modal-footer">{footer}</div>}
+      </div>
+    </div>
+  );
+}
+
+function Loading() { return <div className="loading"><div className="spinner"></div>กำลังโหลด...</div>; }
+function Empty({ msg }) { return <div className="empty">📭 {msg || 'ไม่มีข้อมูล'}</div>; }
+
+// ═══════════════════════════════════════════
+// TAB 1: ตารางสอน — FIX: แสดง subject_code, subject_name, day, time
+// ═══════════════════════════════════════════
+function SchedulesTab({ addToast }) {
+  const { data, loading, reload } = useApi('/api/schedules');
+  const { data: studentsData } = useApi('/api/students');
+  const { data: classroomsData } = useApi('/api/classrooms');
+  const [modal, setModal] = useState(null);
+  const [form, setForm] = useState({});
+  const [saving, setSaving] = useState(false);
+
+  // สร้าง list กลุ่มเรียน (unique) จากข้อมูลนักเรียน — รวมสาขา
+  const studentList = Array.isArray(studentsData) ? studentsData : [];
+  const sectionMap = new Map();
+  studentList.forEach(s => {
+    const sec = s.section || s.group_name || '';
+    const dept = s.department || '';
+    if (sec) {
+      const key = dept ? `${sec} - ${dept}` : sec;
+      sectionMap.set(key, { section: sec, department: dept });
+    }
+  });
+  const sections = [...sectionMap.keys()].sort();
+
+  // list ห้องเรียน
+  const classrooms = Array.isArray(classroomsData) ? classroomsData : [];
+const deptOptions = [...new Set(studentList.map(s => s.department).filter(Boolean))].sort();
+
+  const defaultForm = { subject_code:'', subject_name:'', level:'ปวช.', year:'1', group_no:'1', department:'', _customDept:false, day_of_week:'จันทร์', start_time:'', end_time:'', room:'', teacher_name:'', semester:'', academic_year:'' };
+
+  const openAdd = () => { setForm({...defaultForm}); setModal('add'); };
+  const openEdit = (item) => {
+    // parse section "ปวช.2/1 - การบัญชี" กลับเป็น 4 ช่อง
+    const sec = item.section || '';
+    let level = 'ปวช.', year = '1', group_no = '1', department = item.department || '';
+    const dashParts = sec.split(' - ');
+    if (dashParts.length >= 2) department = dashParts[1].trim();
+    const grpPart = dashParts[0].trim();
+    if (grpPart.startsWith('ปวส.')) { level = 'ปวส.'; }
+    const numMatch = grpPart.match(/(\d)\/(\d+)/);
+    if (numMatch) { year = numMatch[1]; group_no = numMatch[2]; }
+    setForm({...item, level, year, group_no, department, _customDept: department ? !deptOptions.includes(department) : false});
+    setModal('edit');
+  };
+
+  const handleDepartmentChange = (value) => {
+    if (value === '__custom_dept') {
+      setForm(prev => ({...prev, department:'', _customDept:true}));
+    } else {
+      setForm(prev => ({...prev, department:value, _customDept:false}));
+    }
+  };
+
+  const handleCustomDepartmentInput = (value) => {
+    setForm(prev => ({...prev, department:value, _customDept:true}));
+  };
+
+  const timeToMinutes = (time) => {
+    if (!time || typeof time !== 'string' || !time.includes(':')) return null;
+    const [h, m] = time.split(':').map(Number);
+    if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+    return (h * 60) + m;
+  };
+
+  // ฐานคาบเรียนเริ่ม 08:00 น. คาบละ 60 นาที
+  // ส่ง start_period/end_period ไปด้วย เพื่อไม่ให้ชน chk_period_order ในตาราง schedules
+  const buildSchedulePeriods = (startTime, endTime) => {
+    const startMinutes = timeToMinutes(startTime);
+    const endMinutes = timeToMinutes(endTime);
+    if (startMinutes === null || endMinutes === null) return null;
+    if (endMinutes <= startMinutes) return null;
+
+    const baseMinutes = 8 * 60;
+    const startPeriod = Math.max(1, Math.floor((startMinutes - baseMinutes) / 60) + 1);
+    const endPeriod = Math.max(startPeriod, Math.ceil((endMinutes - baseMinutes) / 60));
+
+    return {
+      start_period: startPeriod,
+      end_period: endPeriod,
+      custom_start_time: startTime,
+      custom_end_time: endTime
+    };
+  };
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const isEdit = modal === 'edit';
+      // ประกอบ section จาก 4 ช่อง: "ปวช.2/1 - การบัญชี"
+      const sectionStr = (form.level || 'ปวช.') + (form.year || '1') + '/' + (form.group_no || '1');
+      const fullSection = form.department ? `${sectionStr} - ${form.department}` : sectionStr;
+      const schedulePeriods = buildSchedulePeriods(form.start_time, form.end_time);
+      if (!schedulePeriods) {
+        throw new Error('กรุณาระบุเวลาเริ่มและเวลาสิ้นสุดให้ถูกต้อง โดยเวลาสิ้นสุดต้องมากกว่าเวลาเริ่ม');
+      }
+      const { _customDept, ...cleanForm } = form;
+      const payload = {
+        ...cleanForm,
+        section: fullSection,
+        ...schedulePeriods
+      };
+      const url = isEdit ? `${API}/api/schedules/${form._id || form.id}` : `${API}/api/schedules`;
+      const r = await fetch(url, { method: isEdit ? 'PUT' : 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+      const json = await r.json();
+      if (!r.ok) throw new Error(json.error || 'Failed');
+      addToast(isEdit ? 'แก้ไขสำเร็จ' : 'เพิ่มสำเร็จ');
+      setModal(null); reload();
+    } catch (e) { addToast(e.message, 'error'); }
+    setSaving(false);
+  };
+
+  const del = async (id) => {
+    if (!confirm('ยืนยันการลบ?')) return;
+    try { await fetch(`${API}/api/schedules/${id}`, { method:'DELETE' }); addToast('ลบสำเร็จ'); reload(); }
+    catch (e) { addToast(e.message, 'error'); }
+  };
+
+  const days = ['จันทร์','อังคาร','พุธ','พฤหัสบดี','ศุกร์','เสาร์','อาทิตย์'];
+  const items = Array.isArray(data) ? data : [];
+
+  // Helper: resolve field names flexibly
+  const f = (obj, ...keys) => { for (const k of keys) { if (obj[k] !== undefined && obj[k] !== null && obj[k] !== '') return obj[k]; } return ''; };
+
+  return (
+    <div>
+      <div className="stats-row">
+        <div className="stat-card"><div className="stat-label">วิชาทั้งหมด</div><div className="stat-value">{items.length}</div></div>
+        <div className="stat-card"><div className="stat-label">วันที่มีสอน</div><div className="stat-value">{new Set(items.map(s => f(s,'day_of_week','day'))).size}</div></div>
+      </div>
+      <div className="card">
+        <div className="card-header">
+          <h2>📅 ตารางสอน</h2>
+          <button className="btn btn-primary" onClick={openAdd}>+ เพิ่มตารางสอน</button>
+        </div>
+        <div className="card-body">
+          {loading ? <Loading /> : items.length === 0 ? <Empty msg="ยังไม่มีตารางสอน" /> : (
+            <div className="table-wrap">
+              <table>
+                <thead><tr><th>#</th><th>รหัสวิชา</th><th>ชื่อวิชา</th><th>กลุ่ม</th><th>วัน</th><th>เวลา</th><th>ห้อง</th><th>ผู้สอน</th><th>จัดการ</th></tr></thead>
+                <tbody>
+                  {items.map((s, i) => (
+                    <tr key={s._id || s.id || i}>
+                      <td>{i+1}</td>
+                      <td style={{fontFamily:'var(--mono)'}}><strong>{f(s,'subject_code','subjectCode','code') || '-'}</strong></td>
+                      <td>{f(s,'subject_name','subjectName','name') || '-'}</td>
+                      <td>{f(s,'section','group') || '-'}</td>
+                      <td>{f(s,'day_of_week','day') || '-'}</td>
+                      <td style={{fontFamily:'var(--mono)'}}>{
+                        (f(s,'start_time','startTime') && f(s,'end_time','endTime'))
+                          ? `${f(s,'start_time','startTime')}-${f(s,'end_time','endTime')}`
+                          : f(s,'time','period') || '-'
+                      }</td>
+                      <td>{f(s,'room','classroom') || '-'}</td>
+                      <td>{f(s,'teacher_name','teacherName') || '-'}</td>
+                      <td>
+                        <div className="btn-group">
+                          <button className="btn btn-sm btn-secondary" onClick={() => openEdit(s)}>✏️</button>
+                          <button className="btn btn-sm btn-danger" onClick={() => del(s._id || s.id)}>🗑</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {modal && (
+        <Modal title={modal==='add' ? 'เพิ่มตารางสอน' : 'แก้ไขตารางสอน'} onClose={() => setModal(null)}
+          footer={<><button className="btn btn-secondary" onClick={() => setModal(null)}>ยกเลิก</button><button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? 'กำลังบันทึก...' : 'บันทึก'}</button></>}>
+          <div className="form-grid">
+            <div className="form-group"><label>รหัสวิชา</label><input value={form.subject_code||''} onChange={e => setForm({...form, subject_code:e.target.value})} /></div>
+            <div className="form-group"><label>ชื่อวิชา</label><input value={form.subject_name||''} onChange={e => setForm({...form, subject_name:e.target.value})} /></div>
+            <div className="form-group"><label>ระดับ</label>
+              <select value={form.level||'ปวช.'} onChange={e => setForm({...form, level:e.target.value})}>
+                <option>ปวช.</option><option>ปวส.</option>
+              </select>
+            </div>
+            <div className="form-group"><label>ชั้นปี</label>
+              <select value={form.year||'1'} onChange={e => setForm({...form, year:e.target.value})}>
+                <option>1</option><option>2</option><option>3</option>
+              </select>
+            </div>
+            <div className="form-group"><label>กลุ่ม/ห้อง</label>
+              <input value={form.group_no||''} onChange={e => setForm({...form, group_no:e.target.value})} placeholder="เช่น 1, 2" />
+            </div>
+            <div className="form-group"><label>สาขาวิชา</label>
+              <select
+                value={form._customDept ? '__custom_dept' : (form.department || '')}
+                onChange={e => handleDepartmentChange(e.target.value)}
+              >
+                <option value="">-- เลือกสาขา --</option>
+                {deptOptions.map(d => <option key={d} value={d}>{d}</option>)}
+                <option value="__custom_dept">+ เพิ่มสาขาใหม่...</option>
+              </select>
+              {form._customDept && (
+                <input
+                  style={{marginTop:6}}
+                  placeholder="พิมพ์ชื่อสาขาวิชา"
+                  value={form.department || ''}
+                  onChange={e => handleCustomDepartmentInput(e.target.value)}
+                  autoFocus
+                />
+              )}
+            </div>
+            <div className="form-group"><label>วัน</label><select value={form.day_of_week||''} onChange={e => setForm({...form, day_of_week:e.target.value})}>{days.map(d => <option key={d}>{d}</option>)}</select></div>
+            <div className="form-group"><label>เวลาเริ่ม</label><input type="time" value={form.start_time||''} onChange={e => setForm({...form, start_time:e.target.value})} /></div>
+            <div className="form-group"><label>เวลาสิ้นสุด</label><input type="time" value={form.end_time||''} onChange={e => setForm({...form, end_time:e.target.value})} /></div>
+            <div className="form-group"><label>ห้องเรียน</label>
+              <select value={form.room||''} onChange={e => setForm({...form, room:e.target.value})}>
+                <option value="">-- เลือกห้อง --</option>
+                {classrooms.map((c,i) => <option key={c.id||i} value={c.room_name}>{c.room_name}{c.building ? ` (${c.building}${c.floor ? ' ชั้น'+c.floor : ''})` : ''}</option>)}
+              </select>
+            </div>
+            <div className="form-group"><label>ผู้สอน</label><input value={form.teacher_name||''} onChange={e => setForm({...form, teacher_name:e.target.value})} /></div>
+            <div className="form-group"><label>ภาคเรียน</label><input value={form.semester||''} onChange={e => setForm({...form, semester:e.target.value})} /></div>
+            <div className="form-group"><label>ปีการศึกษา</label><input value={form.academic_year||''} onChange={e => setForm({...form, academic_year:e.target.value})} /></div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════
+// TAB 2: นักเรียน — FIX: แสดง student_id, ชื่อ-สกุล
+// ═══════════════════════════════════════════
+function StudentsTab({ addToast }) {
+  const { data, loading, reload } = useApi('/api/students');
+  const { data: pendingData, loading: pendingLoading, reload: reloadPending } = useApi('/api/students/pending');
+  const [modal, setModal] = useState(null);
+  const [form, setForm] = useState({});
+  const [saving, setSaving] = useState(false);
+  const [search, setSearch] = useState('');
+  const [approvingId, setApprovingId] = useState(null);
+
+  const defaultForm = { student_id:'', title:'นาย', first_name:'', last_name:'', level:'ปวช.', year:'1', section:'', department:'', line_user_id:'' };
+
+  const openAdd = () => { setForm({...defaultForm}); setModal('add'); };
+  const openEdit = (item) => { setForm({...item}); setModal('edit'); };
+
+  const approveStudent = async (id, name) => {
+    if (!confirm(`ยืนยันนักเรียน "${name}" ?`)) return;
+    setApprovingId(id);
+    try {
+      const r = await fetch(`${API}/api/students/${id}/approve`, { method:'POST' });
+      const json = await r.json();
+      if (!r.ok) throw new Error(json.error || 'Failed');
+      addToast('ยืนยันนักเรียนสำเร็จ');
+      reload(); reloadPending();
+    } catch (e) { addToast(e.message, 'error'); }
+    setApprovingId(null);
+  };
+
+  const rejectStudent = async (id, name) => {
+    if (!confirm(`ปฏิเสธคำขอของ "${name}" ?`)) return;
+    setApprovingId(id);
+    try {
+      const r = await fetch(`${API}/api/students/${id}/reject`, { method:'POST' });
+      const json = await r.json();
+      if (!r.ok) throw new Error(json.error || 'Failed');
+      addToast('ปฏิเสธคำขอแล้ว');
+      reloadPending();
+    } catch (e) { addToast(e.message, 'error'); }
+    setApprovingId(null);
+  };
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const isEdit = modal === 'edit';
+      const url = isEdit ? `${API}/api/students/${form._id || form.id}` : `${API}/api/students`;
+      const r = await fetch(url, { method: isEdit ? 'PUT' : 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(form) });
+      const json = await r.json();
+      if (!r.ok) throw new Error(json.error || 'Failed');
+      addToast(isEdit ? 'แก้ไขสำเร็จ' : 'เพิ่มสำเร็จ');
+      setModal(null); reload();
+    } catch (e) { addToast(e.message, 'error'); }
+    setSaving(false);
+  };
+
+  const del = async (id) => {
+    if (!confirm('ยืนยันการลบ?')) return;
+    try { await fetch(`${API}/api/students/${id}`, { method:'DELETE' }); addToast('ลบสำเร็จ'); reload(); }
+    catch (e) { addToast(e.message, 'error'); }
+  };
+
+  const items = Array.isArray(data) ? data : [];
+  const pendingItems = Array.isArray(pendingData) ? pendingData : [];
+
+  const f = (obj, ...keys) => { for (const k of keys) { if (obj[k] !== undefined && obj[k] !== null && obj[k] !== '') return obj[k]; } return ''; };
+
+  const getName = (s) => {
+    if (s.full_name || s.fullName) return s.full_name || s.fullName;
+    if (s.name) return s.name;
+    const t = f(s,'title','prefix') || '';
+    const fn = f(s,'first_name','firstName') || '';
+    const ln = f(s,'last_name','lastName') || '';
+    return `${t}${fn} ${ln}`.trim() || '-';
+  };
+
+  const getSid = (s) => f(s,'student_id','studentId','code') || '-';
+
+  const filtered = items.filter(s => {
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return getSid(s).toLowerCase().includes(q) || getName(s).toLowerCase().includes(q);
+  });
+
+  return (
+    <div>
+      {pendingItems.length > 0 && (
+        <div className="card" style={{marginBottom:16,border:'1px solid var(--warning)'}}>
+          <div className="card-header">
+            <h2>⏳ รอยืนยันการลงทะเบียน ({pendingItems.length})</h2>
+            <button className="btn btn-secondary btn-sm" onClick={reloadPending}>รีเฟรช</button>
+          </div>
+          <div className="card-body">
+            {pendingLoading ? <Loading /> : (
+              <div className="table-wrap">
+                <table>
+                  <thead><tr><th>#</th><th>รหัส</th><th>ชื่อ-สกุล</th><th>ระดับ</th><th>ชั้นปี</th><th>กลุ่ม</th><th>สาขา</th><th>LINE</th><th>วันที่สมัคร</th><th>จัดการ</th></tr></thead>
+                  <tbody>
+                    {pendingItems.map((s, i) => (
+                      <tr key={s.id || i}>
+                        <td>{i+1}</td>
+                        <td style={{fontFamily:'var(--mono)'}}><strong>{getSid(s)}</strong></td>
+                        <td>{getName(s)}</td>
+                        <td>{f(s,'level') || '-'}</td>
+                        <td>{f(s,'year') || '-'}</td>
+                        <td>{f(s,'section') || '-'}</td>
+                        <td>{f(s,'department') || '-'}</td>
+                        <td>{s.line_user_id ? <span className="badge badge-success">เชื่อมแล้ว</span> : <span className="badge badge-danger">-</span>}</td>
+                        <td>{s.registered_at ? new Date(s.registered_at).toLocaleString('th-TH') : '-'}</td>
+                        <td>
+                          <div className="btn-group">
+                            <button className="btn btn-sm btn-primary" disabled={approvingId === s.id} onClick={() => approveStudent(s.id, getName(s))}>✅ ยืนยัน</button>
+                            <button className="btn btn-sm btn-danger" disabled={approvingId === s.id} onClick={() => rejectStudent(s.id, getName(s))}>❌ ปฏิเสธ</button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div className="stats-row">
+        <div className="stat-card"><div className="stat-label">นักเรียนที่ยืนยันแล้ว</div><div className="stat-value">{items.length}</div></div>
+        <div className="stat-card"><div className="stat-label">รอยืนยัน</div><div className="stat-value" style={{color:'var(--warning)'}}>{pendingItems.length}</div></div>
+        <div className="stat-card"><div className="stat-label">ปวช.</div><div className="stat-value">{items.filter(s => (f(s,'level')||'').includes('ปวช')).length}</div></div>
+        <div className="stat-card"><div className="stat-label">ปวส.</div><div className="stat-value">{items.filter(s => (f(s,'level')||'').includes('ปวส')).length}</div></div>
+        <div className="stat-card"><div className="stat-label">เชื่อม LINE</div><div className="stat-value">{items.filter(s => s.line_user_id).length}</div></div>
+      </div>
+
+      <div className="card">
+        <div className="card-header">
+          <h2>🎓 รายชื่อนักเรียน</h2>
+          <div className="filter-bar">
+            <input placeholder="🔍 ค้นหารหัส/ชื่อ..." value={search} onChange={e => setSearch(e.target.value)} />
+            <button className="btn btn-primary" onClick={openAdd}>+ เพิ่มนักเรียน</button>
+          </div>
+        </div>
+        <div className="card-body">
+          {loading ? <Loading /> : filtered.length === 0 ? <Empty /> : (
+            <div className="table-wrap">
+              <table>
+                <thead><tr><th>#</th><th>รหัส</th><th>ชื่อ-สกุล</th><th>ระดับ</th><th>ชั้นปี</th><th>กลุ่ม</th><th>สาขา</th><th>LINE</th><th>จัดการ</th></tr></thead>
+                <tbody>
+                  {filtered.map((s, i) => (
+                    <tr key={s._id || s.id || i}>
+                      <td>{i+1}</td>
+                      <td style={{fontFamily:'var(--mono)'}}><strong>{getSid(s)}</strong></td>
+                      <td>{getName(s)}</td>
+                      <td>{f(s,'level','grade') || '-'}</td>
+                      <td>{f(s,'year') || '-'}</td>
+                      <td>{f(s,'section','classroom','class') || '-'}</td>
+                      <td>{f(s,'department') || '-'}</td>
+                      <td>{s.line_user_id ? <span className="badge badge-success">เชื่อมแล้ว</span> : <span className="badge badge-danger">ยังไม่เชื่อม</span>}</td>
+                      <td>
+                        <div className="btn-group">
+                          <button className="btn btn-sm btn-secondary" onClick={() => openEdit(s)}>✏️</button>
+                          <button className="btn btn-sm btn-danger" onClick={() => del(s._id || s.id)}>🗑</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {modal && (
+        <Modal title={modal==='add' ? 'เพิ่มนักเรียน' : 'แก้ไขข้อมูลนักเรียน'} onClose={() => setModal(null)}
+          footer={<><button className="btn btn-secondary" onClick={() => setModal(null)}>ยกเลิก</button><button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? 'กำลังบันทึก...' : 'บันทึก'}</button></>}>
+          <div className="form-grid">
+            <div className="form-group"><label>รหัสนักเรียน</label><input value={form.student_id||''} onChange={e => setForm({...form, student_id:e.target.value})} /></div>
+            <div className="form-group"><label>คำนำหน้า</label><select value={form.title||''} onChange={e => setForm({...form, title:e.target.value})}><option>นาย</option><option>นาง</option><option>นางสาว</option></select></div>
+            <div className="form-group"><label>ชื่อ</label><input value={form.first_name||''} onChange={e => setForm({...form, first_name:e.target.value})} /></div>
+            <div className="form-group"><label>นามสกุล</label><input value={form.last_name||''} onChange={e => setForm({...form, last_name:e.target.value})} /></div>
+            <div className="form-group"><label>ระดับ</label><select value={form.level||''} onChange={e => setForm({...form, level:e.target.value})}><option>ปวช.</option><option>ปวส.</option></select></div>
+            <div className="form-group"><label>ชั้นปี</label><select value={form.year||''} onChange={e => setForm({...form, year:e.target.value})}><option>1</option><option>2</option><option>3</option></select></div>
+            <div className="form-group"><label>กลุ่ม/ห้อง</label><input value={form.section||''} onChange={e => setForm({...form, section:e.target.value})} /></div>
+            <div className="form-group"><label>สาขาวิชา</label><input value={form.department||''} onChange={e => setForm({...form, department:e.target.value})} /></div>
+            <div className="form-group" style={{gridColumn:'1/-1'}}><label>LINE User ID</label><input value={form.line_user_id||''} onChange={e => setForm({...form, line_user_id:e.target.value})} placeholder="(ระบบจะเชื่อมอัตโนมัติ)" /></div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════
+// TAB 3: เช็คชื่อ — FIX: เพิ่มลาป่วย/ลากิจ
+// ═══════════════════════════════════════════
+function AttendanceTab({ addToast }) {
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const fetchAtt = async () => {
+    setLoading(true);
+    try {
+      const r = await fetch(`${API}/api/attendance?date=${date}`);
+      const json = await r.json();
+      setData(json.data || json);
+    } catch (e) { addToast(e.message, 'error'); }
+    setLoading(false);
+  };
+
+  useEffect(() => { fetchAtt(); }, [date]);
+
+  // ─── Students list (for manual entry) ───
+  const { data: studentsData } = useApi('/api/students');
+  const studentsList = Array.isArray(studentsData) ? studentsData : [];
+
+  // ─── Manual entry modal ───
+  const [manualModal, setManualModal] = useState(false);
+  const [manualForm, setManualForm] = useState({ student_id:'', schedule_id:'', status:'sick_leave', remark:'' });
+  const [manualSaving, setManualSaving] = useState(false);
+
+  // ─── Schedules list (for manual entry) ───
+  const { data: schedulesData } = useApi('/api/schedules');
+
+  // ─── Edit status ───
+  const [editingId, setEditingId] = useState(null);
+
+  const items = Array.isArray(data) ? data : [];
+  const present = items.filter(a => a.status === 'present' || a.status === 'มาเรียน').length;
+  const absent = items.filter(a => a.status === 'absent' || a.status === 'ขาด').length;
+  const late = items.filter(a => a.status === 'late' || a.status === 'สาย').length;
+  const sick = items.filter(a => a.status === 'sick_leave' || a.status === 'sick' || a.status === 'ลาป่วย').length;
+  const personal = items.filter(a => a.status === 'personal_leave' || a.status === 'personal' || a.status === 'ลากิจ').length;
+
+  const statusMap = {
+    present:'มาเรียน', absent:'ขาด', late:'สาย', sick_leave:'ลาป่วย', personal_leave:'ลากิจ',
+    sick:'ลาป่วย', personal:'ลากิจ',
+    'มาเรียน':'มาเรียน', 'ขาด':'ขาด', 'สาย':'สาย', 'ลาป่วย':'ลาป่วย', 'ลากิจ':'ลากิจ'
+  };
+  const statusBadge = {
+    present:'badge-success', absent:'badge-danger', late:'badge-warning',
+    sick_leave:'badge-sick', personal_leave:'badge-personal',
+    sick:'badge-sick', personal:'badge-personal',
+    'มาเรียน':'badge-success', 'ขาด':'badge-danger', 'สาย':'badge-warning', 'ลาป่วย':'badge-sick', 'ลากิจ':'badge-personal'
+  };
+
+  // ─── Update status via PUT ───
+  const updateStatus = async (id, newStatus) => {
+    try {
+      const r = await fetch(`${API}/api/attendance/${id}`, {
+        method:'PUT', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ status: newStatus })
+      });
+      if (!r.ok) throw new Error('Failed');
+      addToast(`แก้สถานะเป็น "${statusMap[newStatus]}" สำเร็จ`);
+      setEditingId(null);
+      fetchAtt();
+    } catch (e) { addToast(e.message, 'error'); }
+  };
+
+  // ─── Delete attendance record ───
+  const deleteAttendance = async (id) => {
+    if (!confirm('ยืนยันลบข้อมูลเช็คชื่อนี้?')) return;
+    try {
+      const r = await fetch(`${API}/api/attendance/${id}`, { method:'DELETE' });
+      if (!r.ok) throw new Error('Failed');
+      addToast('ลบข้อมูลเช็คชื่อสำเร็จ');
+      fetchAtt();
+    } catch (e) { addToast(e.message, 'error'); }
+  };
+
+  // ─── Manual entry (ลาป่วย/ลากิจ) ───
+  const saveManual = async () => {
+    if (!manualForm.student_id) { addToast('กรุณาเลือกนักเรียน', 'error'); return; }
+    if (!manualForm.schedule_id) { addToast('กรุณาเลือกวิชา', 'error'); return; }
+    setManualSaving(true);
+    try {
+      const r = await fetch(`${API}/api/attendance/manual`, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ ...manualForm, date })
+      });
+      const json = await r.json();
+      if (!r.ok) throw new Error(json.error || 'Failed');
+      addToast(`บันทึก${statusMap[manualForm.status]}สำเร็จ`);
+      setManualModal(false);
+      setManualForm({ student_id:'', schedule_id:'', status:'sick_leave', remark:'' });
+      fetchAtt();
+    } catch (e) { addToast(e.message, 'error'); }
+    setManualSaving(false);
+  };
+
+  const f = (obj, ...keys) => { for (const k of keys) { if (obj[k] !== undefined && obj[k] !== null && obj[k] !== '') return obj[k]; } return ''; };
+
+  return (
+    <div>
+      <div className="stats-row">
+        <div className="stat-card"><div className="stat-label">ทั้งหมด</div><div className="stat-value">{items.length}</div></div>
+        <div className="stat-card"><div className="stat-label">มาเรียน</div><div className="stat-value" style={{color:'var(--success)'}}>{present}</div></div>
+        <div className="stat-card"><div className="stat-label">มาสาย</div><div className="stat-value" style={{color:'var(--warning)'}}>{late}</div></div>
+        <div className="stat-card"><div className="stat-label">ขาดเรียน</div><div className="stat-value" style={{color:'var(--danger)'}}>{absent}</div></div>
+        <div className="stat-card"><div className="stat-label">ลาป่วย</div><div className="stat-value" style={{color:'var(--sick)'}}>{sick}</div></div>
+        <div className="stat-card"><div className="stat-label">ลากิจ</div><div className="stat-value" style={{color:'var(--personal)'}}>{personal}</div></div>
+      </div>
+
+      <div className="card">
+        <div className="card-header">
+          <h2>📋 สถานะเช็คชื่อ</h2>
+          <div className="filter-bar">
+            <input type="date" value={date} onChange={e => setDate(e.target.value)} />
+            <button className="btn btn-secondary" onClick={fetchAtt}>🔄 รีเฟรช</button>
+            <button className="btn btn-primary" onClick={() => setManualModal(true)}>📝 บันทึกลา/ขาด</button>
+          </div>
+        </div>
+        {/* Legend */}
+        <div style={{padding:'10px 20px',borderBottom:'1px solid var(--border)',display:'flex',gap:'10px',flexWrap:'wrap'}}>
+          <span className="badge badge-success">● มาเรียน</span>
+          <span className="badge badge-warning">● มาสาย</span>
+          <span className="badge badge-danger">● ขาดเรียน</span>
+          <span className="badge badge-sick">● ลาป่วย</span>
+          <span className="badge badge-personal">● ลากิจ</span>
+        </div>
+        <div className="card-body">
+          {loading ? <Loading /> : items.length === 0 ? <Empty msg="ไม่มีข้อมูลเช็คชื่อวันนี้" /> : (
+            <div className="table-wrap">
+              <table>
+                <thead><tr><th>#</th><th>รหัส</th><th>ชื่อ-สกุล</th><th>วิชา</th><th>สถานะ</th><th>เวลาเข้า</th><th>เวลาออก</th><th>หมายเหตุ</th><th>จัดการ</th></tr></thead>
+                <tbody>
+                  {items.map((a, i) => (
+                    <tr key={a.id || a._id || i}>
+                      <td>{i+1}</td>
+                      <td style={{fontFamily:'var(--mono)'}}>{a.studentId || a.student_id || '-'}</td>
+                      <td>{a.name || a.student_name || `${a.first_name||''} ${a.last_name||''}`.trim() || '-'}</td>
+                      <td>{a.subject || a.subject_name || a.subject_code || '-'}</td>
+                      <td>
+                        {editingId === (a.id || a._id) ? (
+                          <div className="att-btn-group">
+                            {[{v:'present',l:'มา',c:'selected-present'},{v:'late',l:'สาย',c:'selected-late'},{v:'absent',l:'ขาด',c:'selected-absent'},{v:'sick_leave',l:'ป่วย',c:'selected-sick'},{v:'personal_leave',l:'กิจ',c:'selected-personal'}].map(s => (
+                              <button key={s.v} className={`att-btn ${a.status===s.v?s.c:''}`}
+                                onClick={() => updateStatus(a.id || a._id, s.v)}>{s.l}</button>
+                            ))}
+                            <button className="att-btn" onClick={() => setEditingId(null)} style={{fontSize:11}}>✕</button>
+                          </div>
+                        ) : (
+                          <span className={`badge ${statusBadge[a.status] || 'badge-info'}`}>
+                            {a.statusLabel || statusMap[a.status] || a.status}
+                          </span>
+                        )}
+                      </td>
+                      <td style={{fontFamily:'var(--mono)'}}>{a.time || a.check_in_time || '-'}</td>
+                      <td style={{fontFamily:'var(--mono)',color: a.checkOutTime ? 'var(--accent3)' : 'var(--text3)'}}>{a.checkOutTime || '-'}</td>
+                      <td style={{fontSize:12,color:'var(--text2)'}}>{a.note || a.remark || '-'}</td>
+                      <td>
+                        <button className="btn btn-sm btn-secondary" onClick={() => setEditingId(a.id || a._id)} title="แก้สถานะ">✏️</button>
+                        <button className="btn btn-sm btn-danger" onClick={() => deleteAttendance(a.id || a._id)} title="ลบ" style={{marginLeft:4}}>🗑</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Modal: บันทึกลาป่วย/ลากิจ/ขาด ── */}
+      {manualModal && (
+        <Modal title="📝 บันทึกลา / ขาดเรียน (บันทึกมือ)" onClose={() => setManualModal(false)}
+          footer={<><button className="btn btn-secondary" onClick={() => setManualModal(false)}>ยกเลิก</button><button className="btn btn-primary" onClick={saveManual} disabled={manualSaving}>{manualSaving ? 'กำลังบันทึก...' : '✅ บันทึก'}</button></>}>
+          <div className="form-grid">
+            <div className="form-group" style={{gridColumn:'1/-1'}}>
+              <label>วิชา / ตารางสอน</label>
+              <select value={manualForm.schedule_id} onChange={e => setManualForm({...manualForm, schedule_id:e.target.value})}>
+                <option value="">-- เลือกวิชา --</option>
+                {(Array.isArray(schedulesData) ? schedulesData : []).map((s,i) => (
+                  <option key={s.id||i} value={s.id}>
+                    {f(s,'subject_code','')} {f(s,'subject_name','')} ({f(s,'day_of_week','')} {f(s,'start_time','')}-{f(s,'end_time','')})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="form-group" style={{gridColumn:'1/-1'}}>
+              <label>นักเรียน</label>
+              <select value={manualForm.student_id} onChange={e => setManualForm({...manualForm, student_id:e.target.value})}>
+                <option value="">-- เลือกนักเรียน --</option>
+                {studentsList.map((s,i) => (
+                  <option key={s.id||i} value={s.id}>{f(s,'student_id','studentId')} — {f(s,'title','')}{f(s,'first_name','')} {f(s,'last_name','')}</option>
+                ))}
+              </select>
+            </div>
+            <div className="form-group">
+              <label>สถานะ</label>
+              <select value={manualForm.status} onChange={e => setManualForm({...manualForm, status:e.target.value})}>
+                <option value="sick_leave">🏥 ลาป่วย</option>
+                <option value="personal_leave">📋 ลากิจ</option>
+                <option value="absent">❌ ขาดเรียน</option>
+                <option value="present">✅ มาเรียน</option>
+                <option value="late">⏰ มาสาย</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label>วันที่</label>
+              <input type="date" value={date} disabled style={{background:'var(--surface2)'}} />
+            </div>
+            <div className="form-group" style={{gridColumn:'1/-1'}}>
+              <label>หมายเหตุ</label>
+              <textarea value={manualForm.remark} onChange={e => setManualForm({...manualForm, remark:e.target.value})} placeholder="เช่น ไข้หวัด, ธุระส่วนตัว" />
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════
+// TAB 4: ส่ง QR Code
+// ═══════════════════════════════════════════
+function QRTab({ addToast }) {
+  const { data: schedules } = useApi('/api/schedules');
+  const [selectedSchedule, setSelectedSchedule] = useState('');
+  const [qrType, setQrType] = useState('check_in');
+  const [sending, setSending] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const f = (obj, ...keys) => { for (const k of keys) { if (obj[k] !== undefined && obj[k] !== null && obj[k] !== '') return obj[k]; } return ''; };
+
+  const sendQR = async () => {
+    if (!selectedSchedule) { addToast('กรุณาเลือกวิชา', 'error'); return; }
+    setSending(true);
+    try {
+      const r = await fetch(`${API}/api/send-qr`, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ schedule_id: selectedSchedule, qrType: qrType })
+      });
+      const json = await r.json();
+      if (!r.ok) throw new Error(json.message || json.error || 'Failed');
+      setResult(json);
+      addToast(`ส่ง QR ${qrType === 'check_in' ? 'เข้าเรียน' : 'ออกเรียน'} สำเร็จ`);
+    } catch (e) { addToast(e.message, 'error'); }
+    setSending(false);
+  };
+
+  const items = Array.isArray(schedules) ? schedules : [];
+
+  return (
+    <div>
+      <div className="card">
+        <div className="card-header"><h2>📱 ส่ง QR Code เช็คชื่อ</h2></div>
+        <div className="card-body">
+          <div className="form-grid" style={{maxWidth:600}}>
+            <div className="form-group" style={{gridColumn:'1/-1'}}>
+              <label>เลือกวิชา / ตารางสอน</label>
+              <select value={selectedSchedule} onChange={e => setSelectedSchedule(e.target.value)}>
+                <option value="">-- เลือกวิชา --</option>
+                {items.map((s, i) => (
+                  <option key={s._id || s.id || i} value={s._id || s.id}>
+                    {f(s,'subject_code','subjectCode','code')} {f(s,'subject_name','subjectName','name')} ({f(s,'day_of_week','day')} {f(s,'start_time','startTime')}-{f(s,'end_time','endTime')})
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="qr-options" style={{marginTop:'1.25rem'}}>
+            <div className="qr-card" style={qrType==='check_in'?{borderColor:'var(--accent)',background:'var(--accent-light)'}:{}} onClick={() => setQrType('check_in')}>
+              <h4>🟢 เข้าเรียน (Check-in)</h4>
+              <p style={{color:'var(--text2)',fontSize:'12px'}}>ส่ง QR Code ให้นักเรียนสแกนเช็คชื่อเข้าเรียน</p>
+            </div>
+            <div className="qr-card" style={qrType==='check_out'?{borderColor:'var(--accent3)',background:'rgba(239,71,111,.08)'}:{}} onClick={() => setQrType('check_out')}>
+              <h4>🔴 ออกเรียน (Check-out)</h4>
+              <p style={{color:'var(--text2)',fontSize:'12px'}}>ส่ง QR Code ให้นักเรียนสแกนเช็คชื่อออกเรียน</p>
+            </div>
+          </div>
+
+          <div style={{marginTop:'1.25rem'}}>
+            <button className="btn btn-primary" onClick={sendQR} disabled={sending || !selectedSchedule}>
+              {sending ? '⏳ กำลังส่ง...' : `📤 ส่ง QR ${qrType === 'check_in' ? 'เข้าเรียน' : 'ออกเรียน'}`}
+            </button>
+          </div>
+
+          {result && (
+            <div style={{marginTop:'1.25rem',padding:'16px',background:'var(--surface2)',borderRadius:'var(--radius)',border:'1px solid var(--border)'}}>
+              <strong style={{color:'var(--success)'}}>✓ ส่งสำเร็จ</strong>
+              <pre style={{marginTop:8,fontSize:'12px',color:'var(--text2)',fontFamily:'var(--mono)',whiteSpace:'pre-wrap'}}>{JSON.stringify(result, null, 2)}</pre>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════
+// TAB 5: พิกัดห้องเรียน
+// ═══════════════════════════════════════════
+function ClassroomsTab({ addToast }) {
+  const { data, loading, reload } = useApi('/api/classrooms');
+  const [modal, setModal] = useState(null);
+  const [form, setForm] = useState({});
+  const [saving, setSaving] = useState(false);
+
+  const defaultForm = { room_name:'', building:'', floor:'', latitude:'', longitude:'', allowed_radius_m:50 };
+
+  const openAdd = () => { setForm({...defaultForm}); setModal('add'); };
+  const openEdit = (item) => { setForm({...item}); setModal('edit'); };
+
+  const getLocation = () => {
+    if (!navigator.geolocation) { addToast('เบราว์เซอร์ไม่รองรับ GPS','error'); return; }
+    navigator.geolocation.getCurrentPosition(
+      pos => { setForm(f => ({...f, latitude:pos.coords.latitude.toFixed(6), longitude:pos.coords.longitude.toFixed(6)})); addToast('ดึงพิกัดสำเร็จ'); },
+      err => addToast('ไม่สามารถดึงพิกัดได้: '+err.message,'error')
+    );
+  };
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const isEdit = modal === 'edit';
+      const url = isEdit ? `${API}/api/classrooms/${form._id || form.id}` : `${API}/api/classrooms`;
+      const payload = {...form, latitude:parseFloat(form.latitude), longitude:parseFloat(form.longitude), allowed_radius_m:parseInt(form.allowed_radius_m)};
+      const r = await fetch(url, { method: isEdit ? 'PUT' : 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+      if (!r.ok) throw new Error('Failed');
+      addToast(isEdit ? 'แก้ไขสำเร็จ' : 'เพิ่มสำเร็จ');
+      setModal(null); reload();
+    } catch (e) { addToast(e.message, 'error'); }
+    setSaving(false);
+  };
+
+  const del = async (id) => {
+    if (!confirm('ยืนยันการลบ?')) return;
+    try { await fetch(`${API}/api/classrooms/${id}`, { method:'DELETE' }); addToast('ลบสำเร็จ'); reload(); }
+    catch (e) { addToast(e.message, 'error'); }
+  };
+
+  const items = Array.isArray(data) ? data : [];
+
+  return (
+    <div>
+      <div className="card">
+        <div className="card-header">
+          <h2>📍 พิกัดห้องเรียน</h2>
+          <button className="btn btn-primary" onClick={openAdd}>+ เพิ่มห้อง</button>
+        </div>
+        <div className="card-body">
+          {loading ? <Loading /> : items.length === 0 ? <Empty msg="ยังไม่มีข้อมูลห้องเรียน" /> : (
+            <div className="table-wrap">
+              <table>
+                <thead><tr><th>ห้อง</th><th>อาคาร</th><th>ชั้น</th><th>Latitude</th><th>Longitude</th><th>รัศมี (m)</th><th>จัดการ</th></tr></thead>
+                <tbody>
+                  {items.map((c, i) => (
+                    <tr key={c._id || c.id || i}>
+                      <td><strong>{c.room_name}</strong></td>
+                      <td>{c.building || '-'}</td>
+                      <td>{c.floor || '-'}</td>
+                      <td style={{fontFamily:'var(--mono)',fontSize:'12px'}}>{c.latitude}</td>
+                      <td style={{fontFamily:'var(--mono)',fontSize:'12px'}}>{c.longitude}</td>
+                      <td>{c.allowed_radius_m || 50}</td>
+                      <td>
+                        <div className="btn-group">
+                          <button className="btn btn-sm btn-secondary" onClick={() => openEdit(c)}>✏️</button>
+                          <button className="btn btn-sm btn-danger" onClick={() => del(c._id || c.id)}>🗑</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {modal && (
+        <Modal title={modal==='add' ? 'เพิ่มห้องเรียน' : 'แก้ไขห้องเรียน'} onClose={() => setModal(null)}
+          footer={<><button className="btn btn-secondary" onClick={() => setModal(null)}>ยกเลิก</button><button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? 'กำลังบันทึก...' : 'บันทึก'}</button></>}>
+          <div className="form-grid">
+            <div className="form-group"><label>ชื่อห้อง</label><input value={form.room_name||''} onChange={e => setForm({...form, room_name:e.target.value})} /></div>
+            <div className="form-group"><label>อาคาร</label><input value={form.building||''} onChange={e => setForm({...form, building:e.target.value})} /></div>
+            <div className="form-group"><label>ชั้น</label><input value={form.floor||''} onChange={e => setForm({...form, floor:e.target.value})} /></div>
+            <div className="form-group"><label>รัศมี (เมตร)</label><input type="number" value={form.allowed_radius_m||50} onChange={e => setForm({...form, allowed_radius_m:e.target.value})} /></div>
+            <div className="form-group"><label>Latitude</label><input value={form.latitude||''} onChange={e => setForm({...form, latitude:e.target.value})} placeholder="เช่น 14.0207" /></div>
+            <div className="form-group"><label>Longitude</label><input value={form.longitude||''} onChange={e => setForm({...form, longitude:e.target.value})} placeholder="เช่น 99.5328" /></div>
+            <div className="form-group" style={{gridColumn:'1/-1'}}>
+              <button className="btn btn-warning" onClick={getLocation}>📍 ดึงพิกัดปัจจุบัน (GPS)</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════
+// TAB 6: ลงทะเบียนใบหน้า
+// ═══════════════════════════════════════════
+function FaceRegTab({ addToast }) {
+  const { data: students, reload: reloadStudents } = useApi('/api/students');
+  const { data: faceData, loading: faceLoading, reload: reloadFace } = useApi('/api/face-registrations');
+  const [selectedStudent, setSelectedStudent] = useState('');
+  const [cameraOn, setCameraOn] = useState(false);
+  const [capturedImg, setCapturedImg] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [previewImg, setPreviewImg] = useState(null);
+  const [filter, setFilter] = useState('all'); // all, registered, not_registered
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const streamRef = useRef(null);
+
+  const f = (obj, ...keys) => { for (const k of keys) { if (obj[k] !== undefined && obj[k] !== null && obj[k] !== '') return obj[k]; } return ''; };
+
+  const startCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'user', width:640, height:480 } });
+      streamRef.current = stream;
+      if (videoRef.current) videoRef.current.srcObject = stream;
+      setCameraOn(true); setCapturedImg(null);
+    } catch (e) { addToast('ไม่สามารถเปิดกล้องได้: '+e.message,'error'); }
+  };
+
+  const stopCamera = () => {
+    if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; }
+    setCameraOn(false);
+  };
+
+  const capture = () => {
+    const canvas = canvasRef.current;
+    const video = videoRef.current;
+    if (!canvas || !video) return;
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext('2d').drawImage(video, 0, 0);
+    setCapturedImg(canvas.toDataURL('image/jpeg', 0.85));
+    stopCamera();
+  };
+
+  const upload = async () => {
+    if (!selectedStudent || !capturedImg) { addToast('เลือกนักเรียนและถ่ายรูปก่อน','error'); return; }
+    setUploading(true);
+    try {
+      const r = await fetch(`${API}/api/face-register`, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ student_id: selectedStudent, photo: capturedImg })
+      });
+      const json = await r.json();
+      if (!r.ok) throw new Error(json.error || 'Failed');
+      addToast('ลงทะเบียนใบหน้าสำเร็จ');
+      setCapturedImg(null); setSelectedStudent('');
+      reloadFace();
+    } catch (e) { addToast(e.message, 'error'); }
+    setUploading(false);
+  };
+
+  const deleteFace = async (studentId, studentName) => {
+    if (!confirm(`ยืนยันลบข้อมูลใบหน้าของ ${studentName}?\nนักเรียนจะต้องลงทะเบียนใบหน้าใหม่`)) return;
+    try {
+      const r = await fetch(`${API}/api/face-registrations/${studentId}`, { method:'DELETE' });
+      const json = await r.json();
+      if (!r.ok) throw new Error(json.error || 'Failed');
+      addToast(`ลบข้อมูลใบหน้าของ ${studentName} สำเร็จ`);
+      reloadFace();
+    } catch (e) { addToast(e.message, 'error'); }
+  };
+
+  useEffect(() => { return () => stopCamera(); }, []);
+
+  const studentList = Array.isArray(students) ? students : [];
+  const faceMap = {};
+  if (Array.isArray(faceData)) {
+    faceData.forEach(f => { faceMap[f.student_id] = f; });
+  }
+
+  const registered = studentList.filter(s => faceMap[s.id]);
+  const notRegistered = studentList.filter(s => !faceMap[s.id]);
+  const displayList = filter === 'registered' ? registered : filter === 'not_registered' ? notRegistered : studentList;
+
+  return (
+    <div>
+      {/* Stats */}
+      <div className="stats-row">
+        <div className="stat-card"><div className="stat-label">นักเรียนทั้งหมด</div><div className="stat-value">{studentList.length}</div></div>
+        <div className="stat-card"><div className="stat-label">ลงทะเบียนแล้ว</div><div className="stat-value" style={{color:'var(--success)'}}>{registered.length}</div></div>
+        <div className="stat-card"><div className="stat-label">ยังไม่ลงทะเบียน</div><div className="stat-value" style={{color:'var(--danger)'}}>{notRegistered.length}</div></div>
+      </div>
+
+      {/* ลงทะเบียนโดยครู */}
+      <div className="card">
+        <div className="card-header"><h2>🤳 ลงทะเบียนใบหน้า (ครูถ่ายให้)</h2></div>
+        <div className="card-body">
+          <div className="form-grid" style={{maxWidth:500,marginBottom:'1.25rem'}}>
+            <div className="form-group" style={{gridColumn:'1/-1'}}>
+              <label>เลือกนักเรียน</label>
+              <select value={selectedStudent} onChange={e => setSelectedStudent(e.target.value)}>
+                <option value="">-- เลือกนักเรียน --</option>
+                {studentList.map((s, i) => (
+                  <option key={s.id || i} value={s.id}>
+                    {f(s,'student_id','studentId')} - {f(s,'title','')}{f(s,'first_name','')} {f(s,'last_name','')}
+                    {faceMap[s.id] ? ' ✅' : ' ❌'}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div style={{display:'flex',gap:'1.25rem',flexWrap:'wrap'}}>
+            <div>
+              <div className="camera-container">
+                {cameraOn ? (
+                  <video ref={videoRef} autoPlay playsInline muted />
+                ) : capturedImg ? (
+                  <img src={capturedImg} alt="captured" style={{width:'100%',height:'100%',objectFit:'cover'}} />
+                ) : (
+                  <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',color:'#999',flexDirection:'column',gap:8}}>
+                    <span style={{fontSize:'3rem'}}>📷</span>
+                    <span>กดเปิดกล้องเพื่อถ่ายรูป</span>
+                  </div>
+                )}
+              </div>
+              <canvas ref={canvasRef} style={{display:'none'}} />
+              <div className="camera-controls">
+                {!cameraOn && !capturedImg && <button className="btn btn-primary" onClick={startCamera}>📷 เปิดกล้อง</button>}
+                {cameraOn && <button className="btn btn-primary" onClick={capture}>📸 ถ่ายรูป</button>}
+                {cameraOn && <button className="btn btn-secondary" onClick={stopCamera}>ปิดกล้อง</button>}
+                {capturedImg && <button className="btn btn-secondary" onClick={startCamera}>📷 ถ่ายใหม่</button>}
+                {capturedImg && <button className="btn btn-primary" onClick={upload} disabled={uploading}>{uploading ? '⏳ กำลังบันทึก...' : '✅ บันทึกใบหน้า'}</button>}
+              </div>
+            </div>
+            <div style={{flex:1,minWidth:240}}>
+              <div style={{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:'var(--radius)',padding:'18px'}}>
+                <h4 style={{marginBottom:'10px',color:'var(--accent)'}}>📝 คำแนะนำ</h4>
+                <ul style={{color:'var(--text2)',fontSize:'13px',lineHeight:1.8,paddingLeft:'18px'}}>
+                  <li>หันหน้าตรง มองกล้อง</li>
+                  <li>แสงสว่างเพียงพอ ไม่ย้อนแสง</li>
+                  <li>ไม่สวมแว่นกันแดดหรือหน้ากาก</li>
+                  <li>ถ่ายระยะใกล้ เห็นใบหน้าชัด</li>
+                  <li>นักเรียนสามารถลงทะเบียนเองผ่าน LIFF ได้</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ตารางสถานะลงทะเบียน */}
+      <div className="card" style={{marginTop:'1.25rem'}}>
+        <div className="card-header">
+          <h2>📋 สถานะลงทะเบียนใบหน้า</h2>
+          <div className="filter-bar">
+            <select value={filter} onChange={e => setFilter(e.target.value)} style={{minWidth:140}}>
+              <option value="all">ทั้งหมด ({studentList.length})</option>
+              <option value="registered">ลงทะเบียนแล้ว ({registered.length})</option>
+              <option value="not_registered">ยังไม่ลงทะเบียน ({notRegistered.length})</option>
+            </select>
+            <button className="btn btn-secondary" onClick={reloadFace}>🔄 รีเฟรช</button>
+          </div>
+        </div>
+        <div className="card-body">
+          {faceLoading ? <Loading /> : (
+            <div className="table-wrap">
+              <table>
+                <thead><tr><th>#</th><th>รหัส</th><th>ชื่อ-สกุล</th><th>สถานะ</th><th>รูปที่ลงทะเบียน</th><th>วันที่ลงทะเบียน</th><th>จัดการ</th></tr></thead>
+                <tbody>
+                  {displayList.map((s, i) => {
+                    const face = faceMap[s.id];
+                    return (
+                      <tr key={s.id || i}>
+                        <td>{i+1}</td>
+                        <td style={{fontFamily:'var(--mono)'}}>{f(s,'student_id','studentId')}</td>
+                        <td>{f(s,'title','')}{f(s,'first_name','')} {f(s,'last_name','')}</td>
+                        <td>
+                          {face
+                            ? <span className="badge badge-success">✅ ลงทะเบียนแล้ว</span>
+                            : <span className="badge badge-danger">❌ ยังไม่ลงทะเบียน</span>}
+                        </td>
+                        <td>
+                          {face && face.photo_url ? (
+                            <img src={face.photo_url} alt="face"
+                              style={{width:48,height:48,borderRadius:'50%',objectFit:'cover',cursor:'pointer',border:'2px solid var(--border)'}}
+                              onClick={() => setPreviewImg(face.photo_url)} />
+                          ) : <span style={{color:'var(--text3)',fontSize:12}}>-</span>}
+                        </td>
+                        <td style={{fontSize:12,color:'var(--text2)'}}>
+                          {face ? new Date(face.created_at).toLocaleDateString('th-TH',{day:'2-digit',month:'short',year:'numeric'}) : '-'}
+                        </td>
+                        <td>
+                          {face && (
+                            <button className="btn btn-sm btn-danger"
+                              onClick={() => deleteFace(s.id, `${f(s,'first_name','')} ${f(s,'last_name','')}`)}
+                              title="ลบข้อมูลใบหน้า">🗑</button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Preview modal */}
+      {previewImg && (
+        <Modal title="🖼 รูปที่ลงทะเบียน" onClose={() => setPreviewImg(null)}>
+          <div style={{textAlign:'center'}}>
+            <img src={previewImg} alt="face preview" style={{maxWidth:'100%',maxHeight:'60vh',borderRadius:12}} />
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════
+// TAB 7: รายงาน — ดูข้อมูล + Export Excel
+// ═══════════════════════════════════════════
+function ReportsTab({ addToast }) {
+  const [filters, setFilters] = useState({ subjects: [], sections: [], semesters: [] });
+  const [subjectId, setSubjectId] = useState('');
+  const [section, setSection] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [filtersLoaded, setFiltersLoaded] = useState(false);
+  const [report, setReport] = useState(null);
+
+  useEffect(() => {
+    fetch(`${API}/api/report/filters`)
+      .then(r => r.json())
+      .then(data => {
+        setFilters({ subjects: data.subjects || [], sections: data.sections || [], semesters: data.semesters || [] });
+        setFiltersLoaded(true);
+      })
+      .catch(err => addToast('โหลดตัวกรองไม่สำเร็จ', 'error'));
+  }, []);
+
+  const fetchPreview = async () => {
+    if (!subjectId) { addToast('กรุณาเลือกรายวิชา', 'error'); return; }
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ subject_id: subjectId });
+      if (section) params.set('section', section);
+      if (dateFrom) params.set('date_from', dateFrom);
+      if (dateTo) params.set('date_to', dateTo);
+      if (filters.semesters.length > 0) {
+        params.set('semester', filters.semesters[0].semester);
+        params.set('academic_year', filters.semesters[0].academic_year);
+      }
+      const r = await fetch(`${API}/api/report/preview?${params}`);
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || 'เกิดข้อผิดพลาด');
+      setReport(data);
+    } catch (e) { addToast(e.message, 'error'); }
+    setLoading(false);
+  };
+
+  const exportExcel = async () => {
+    if (!subjectId) return;
+    setExporting(true);
+    try {
+      const params = new URLSearchParams({ subject_id: subjectId });
+      if (section) params.set('section', section);
+      if (dateFrom) params.set('date_from', dateFrom);
+      if (dateTo) params.set('date_to', dateTo);
+      if (filters.semesters.length > 0) {
+        params.set('semester', filters.semesters[0].semester);
+        params.set('academic_year', filters.semesters[0].academic_year);
+      }
+      const response = await fetch(`${API}/api/report/export-excel?${params}`);
+      if (!response.ok) { const err = await response.json(); throw new Error(err.error); }
+      const blob = await response.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `รายงานผลเวลาเรียน_${report?.subjectCode || ''}_${section || 'all'}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      addToast('ดาวน์โหลด Excel สำเร็จ');
+    } catch (e) { addToast(e.message, 'error'); }
+    setExporting(false);
+  };
+
+  const statusColor = (s) => {
+    if (!s) return 'var(--text3)';
+    if (s === 'present') return 'var(--success)';
+    if (s === 'late') return 'var(--warning)';
+    if (s === 'absent') return 'var(--danger)';
+    if (s === 'sick_leave') return 'var(--sick)';
+    if (s === 'personal_leave') return 'var(--personal)';
+    return 'var(--text3)';
+  };
+
+  return (
+    <div>
+      <div className="card" style={{marginBottom:14}}>
+        <div className="card-header"><h2>📊 รายงานผลเวลาเรียน</h2></div>
+        <div className="card-body">
+          <p style={{fontSize:13,color:'var(--text2)',marginBottom:18}}>
+            เลือกรายวิชาและกลุ่มเรียน → กด "ดึงข้อมูล" เพื่อดูตาราง → กด "Export Excel" เพื่อดาวน์โหลดตามรูปแบบ RMS
+          </p>
+          {!filtersLoaded ? <Loading /> : (
+            <div>
+              <div className="form-grid" style={{maxWidth:700,marginBottom:18}}>
+                <div className="form-group">
+                  <label>รายวิชา *</label>
+                  <select value={subjectId} onChange={e => { setSubjectId(e.target.value); setReport(null); }}>
+                    <option value="">-- เลือกรายวิชา --</option>
+                    {filters.subjects.map(s => <option key={s.id} value={s.id}>{s.subject_code} {s.subject_name}</option>)}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label>กลุ่มเรียน</label>
+                  <select value={section} onChange={e => { setSection(e.target.value); setReport(null); }}>
+                    <option value="">-- ทุกกลุ่ม --</option>
+                    {filters.sections.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+                <div className="form-group"><label>ตั้งแต่วันที่</label><input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} /></div>
+                <div className="form-group"><label>ถึงวันที่</label><input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} /></div>
+              </div>
+              <div className="btn-group">
+                <button className="btn btn-primary" onClick={fetchPreview} disabled={loading || !subjectId}>
+                  {loading ? '⏳ กำลังโหลด...' : '📊 ดึงข้อมูล'}
+                </button>
+                {report && (
+                  <button className="btn btn-secondary" onClick={exportExcel} disabled={exporting}>
+                    {exporting ? '⏳ กำลังสร้างไฟล์...' : '📥 Export Excel'}
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {loading && <Loading />}
+
+      {!loading && report && (
+        <div className="card">
+          <div className="card-header" style={{flexWrap:'wrap',gap:8}}>
+            <div>
+              <h2 style={{fontSize:15}}>📋 {report.subjectCode} {report.subjectName}</h2>
+              <div style={{fontSize:12,color:'var(--text2)',marginTop:4}}>
+                กลุ่ม: {report.section} | ครูผู้สอน: {report.teacherName} | นักเรียน {report.students.length} คน | {report.columns.length} คอลัมน์
+              </div>
+            </div>
+          </div>
+          <div style={{padding:0,overflowX:'auto'}}>
+            <table style={{fontSize:11,minWidth:'100%'}}>
+              <thead>
+                <tr>
+                  <th style={{position:'sticky',left:0,background:'var(--surface2)',zIndex:3,minWidth:30,textAlign:'center'}}>#</th>
+                  <th style={{position:'sticky',left:30,background:'var(--surface2)',zIndex:3,minWidth:90,textAlign:'center'}}>รหัส</th>
+                  <th style={{position:'sticky',left:120,background:'var(--surface2)',zIndex:3,minWidth:110}}>ชื่อ</th>
+                  <th style={{position:'sticky',left:230,background:'var(--surface2)',zIndex:3,minWidth:90}}>สกุล</th>
+                  {report.columns.map((col, ci) => (
+                    <th key={ci} style={{textAlign:'center',minWidth:28,padding:'6px 2px',fontSize:8,lineHeight:1.2,whiteSpace:'nowrap',writingMode:'vertical-lr',height:90}}>
+                      {col.header}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {report.students.map((st, si) => (
+                  <tr key={si}>
+                    <td style={{position:'sticky',left:0,background:'var(--surface)',zIndex:1,textAlign:'center',fontSize:10}}>{st.no}</td>
+                    <td style={{position:'sticky',left:30,background:'var(--surface)',zIndex:1,fontFamily:'var(--mono)',fontSize:10,textAlign:'center'}}>{st.studentCode}</td>
+                    <td style={{position:'sticky',left:120,background:'var(--surface)',zIndex:1,fontSize:11,fontWeight:500,whiteSpace:'nowrap'}}>{st.firstName}</td>
+                    <td style={{position:'sticky',left:230,background:'var(--surface)',zIndex:1,fontSize:11,whiteSpace:'nowrap'}}>{st.lastName}</td>
+                    {st.statuses.map((s, ci) => (
+                      <td key={ci} style={{textAlign:'center',fontWeight:600,fontSize:12,padding:'4px 2px',color:statusColor(s.status)}}>
+                        {s.symbol}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {!loading && !report && (
+        <div style={{marginTop:14,padding:'14px 18px',background:'var(--surface)',border:'1px solid var(--border)',borderRadius:'var(--radius)',fontSize:12,color:'var(--text2)'}}>
+          <div><strong>อักษรย่อ:</strong>&nbsp;
+            <strong style={{color:'var(--success)'}}>/</strong> = มาเรียน&nbsp;&nbsp;
+            <strong style={{color:'var(--warning)'}}>ส.</strong> = สาย&nbsp;&nbsp;
+            <strong style={{color:'var(--danger)'}}>ข.</strong> = ขาด&nbsp;&nbsp;
+            <strong style={{color:'var(--sick)'}}>ป.</strong> = ลาป่วย&nbsp;&nbsp;
+            <strong style={{color:'var(--personal)'}}>ก.</strong> = ลากิจ
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+// ═══════════════════════════════════════════
+// MAIN APP
+// ═══════════════════════════════════════════
+const TABS = [
+  { id:'schedules', label:'ตารางสอน', icon:'📅' },
+  { id:'students', label:'นักเรียน', icon:'🎓' },
+  { id:'attendance', label:'เช็คชื่อ', icon:'📋' },
+  { id:'qr', label:'ส่ง QR', icon:'📱' },
+  { id:'classrooms', label:'พิกัดห้อง', icon:'📍' },
+  { id:'face', label:'ลงทะเบียนใบหน้า', icon:'🤳' },
+  { id:'reports', label:'รายงาน', icon:'📊' },
+];
+
+function App() {
+  const [activeTab, setActiveTab] = useState('schedules');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { toasts, addToast, removeToast } = useToast();
+
+  const today = new Date().toLocaleDateString('th-TH', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
+
+  const renderTab = () => {
+    switch(activeTab) {
+      case 'schedules': return <SchedulesTab addToast={addToast} />;
+      case 'students': return <StudentsTab addToast={addToast} />;
+      case 'attendance': return <AttendanceTab addToast={addToast} />;
+      case 'qr': return <QRTab addToast={addToast} />;
+      case 'classrooms': return <ClassroomsTab addToast={addToast} />;
+      case 'face': return <FaceRegTab addToast={addToast} />;
+      case 'reports': return <ReportsTab addToast={addToast} />;
+      default: return null;
+    }
+  };
+
+  const switchTo = (id) => {
+    setActiveTab(id);
+    setSidebarOpen(false);
+  };
+
+  return (
+    <div className="app">
+      <ToastContainer toasts={toasts} removeToast={removeToast} />
+
+      {/* Sidebar backdrop (mobile) */}
+      {sidebarOpen && <div className="sidebar-backdrop show" onClick={() => setSidebarOpen(false)}></div>}
+
+      {/* Sidebar */}
+      <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
+        <div className="sidebar-brand">
+          <h1>🏫 KVC Dashboard</h1>
+          <p>วิทยาลัยอาชีวศึกษากาญจนบุรี</p>
+        </div>
+        <nav className="sidebar-nav">
+          {TABS.map(tab => (
+            <button key={tab.id} className={`nav-item ${activeTab === tab.id ? 'active' : ''}`} onClick={() => switchTo(tab.id)}>
+              <span className="icon">{tab.icon}</span>
+              <span className="label">{tab.label}</span>
+            </button>
+          ))}
+        </nav>
+        <div className="sidebar-footer">
+          <div className="teacher-info">
+            <div className="teacher-avatar">อ</div>
+            <div>
+              <div className="teacher-name">อาจารย์</div>
+              <div className="teacher-role">สาขาวิชาการบัญชี</div>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      {/* Main Area */}
+      <div className="main-area">
+        <header className="topbar">
+          <div style={{display:'flex',alignItems:'center',gap:'12px'}}>
+            <button className="menu-toggle" onClick={() => setSidebarOpen(!sidebarOpen)}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+            </button>
+            <h2>{TABS.find(t => t.id === activeTab)?.icon} {TABS.find(t => t.id === activeTab)?.label}</h2>
+          </div>
+          <div className="topbar-right">
+            <span className="topbar-date">{today}</span>
+            <span style={{fontSize:'11px',color:'var(--text3)'}}>Backend</span>
+            <div className="status-dot" title="Connected"></div>
+          </div>
+        </header>
+
+        <main className="content">
+          {renderTab()}
+        </main>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
