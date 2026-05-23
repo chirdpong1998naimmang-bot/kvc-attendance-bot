@@ -507,8 +507,8 @@ router.post('/check-in', async (req, res) => {
               actualMinutes,
               percent,
               passed,
-              checkInAt: checkInTime.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }),
-              checkOutAt: checkOutTime.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }),
+              checkInAt: checkInTime.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bangkok' }),
+              checkOutAt: checkOutTime.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bangkok' }),
             };
           }
         }
@@ -535,8 +535,7 @@ router.post('/check-in', async (req, res) => {
 
     // ---- 8. ส่งข้อความยืนยัน ----
     const checkedAtStr = checkedAt.toLocaleTimeString('th-TH', {
-      hour: '2-digit', minute: '2-digit', second: '2-digit'
-    });
+      hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Asia/Bangkok' });
 
     // ส่งยืนยันให้นักเรียน
     await sendCheckInConfirmation(lineUserId, {
@@ -744,7 +743,7 @@ router.post('/teacher/manual-qr', async (req, res) => {
       qrType
     });
 
-    const sentAt = new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+    const sentAt = new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bangkok' });
 
     await sendQRToGroup(sch.line_gid, {
       token: qrSession.token,
@@ -818,8 +817,7 @@ router.post('/leave-request', async (req, res) => {
     const leaveLabel = leaveType === 'sick_leave' ? 'ลาป่วย' : 'ลากิจ';
     const checkedAt = new Date();
     const checkedAtStr = checkedAt.toLocaleTimeString('th-TH', {
-      hour: '2-digit', minute: '2-digit', second: '2-digit'
-    });
+      hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Asia/Bangkok' });
 
     const record = await pool.query(
       `INSERT INTO attendance_records
@@ -1120,7 +1118,7 @@ router.get('/test-qr', async (req, res) => {
       qrType: 'check_in'
     });
 
-    const sentAt = new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+    const sentAt = new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bangkok' });
 
     await sendQRToGroup(sch.line_gid, {
       token: qrSession.token,

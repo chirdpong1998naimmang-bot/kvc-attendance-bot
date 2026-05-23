@@ -250,9 +250,24 @@ function getTokenFromUrl() {
 async function initApp() {
   try {
     await liff.init({ liffId: CONFIG.LIFF_ID });
-    
+
+    // ถ้าเปิดจากเบราว์เซอร์ปกติ (ไม่ใช่ LINE app) ให้แจ้งเตือน
+    if (!liff.isInClient()) {
+      document.getElementById('loading').innerHTML = `
+        <div style="text-align:center; padding:40px 24px; max-width:360px; margin:auto;">
+          <div style="font-size:56px; margin-bottom:16px;">📱</div>
+          <div style="font-size:18px; font-weight:600; margin-bottom:8px; color:#1A1A1A;">กรุณาเปิดผ่าน LINE</div>
+          <div style="font-size:14px; color:#6B6B6B; line-height:1.6;">
+            ระบบเช็คชื่อใช้งานได้เฉพาะในแอป LINE เท่านั้น<br>
+            กรุณากดลิงก์จากข้อความใน LINE อีกครั้ง
+          </div>
+        </div>`;
+      return;
+    }
+
     if (!liff.isLoggedIn()) {
-      liff.login();
+      // ส่ง redirectUri กลับมาหน้าเดิม (พร้อม token) เพื่อไม่ให้ redirect ไปหน้า Dashboard
+      liff.login({ redirectUri: window.location.href });
       return;
     }
 

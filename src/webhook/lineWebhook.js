@@ -97,7 +97,7 @@ async function handleJoinGroup(event) {
     const summary = await client.getGroupSummary(groupId);
     groupName = summary.groupName || 'Unknown';
     const countResult = await client.getGroupMemberCount(groupId);
-    memberCount = countResult || 0;
+    memberCount = countResult?.count ?? countResult ?? 0;
   } catch (err) {
     console.warn('Could not get group info:', err.message);
   }
