@@ -5,6 +5,59 @@ const { sendQRToGroup } = require('../services/lineService');
 
 const router = express.Router();
 
+async function ensureStudentApprovalColumns() {
+  await pool.query(`
+    ALTER TABLE students
+      ADD COLUMN IF NOT EXISTS prefix TEXT,
+      ADD COLUMN IF NOT EXISTS first_name TEXT,
+      ADD COLUMN IF NOT EXISTS last_name TEXT,
+      ADD COLUMN IF NOT EXISTS class_year TEXT,
+      ADD COLUMN IF NOT EXISTS room TEXT,
+      ADD COLUMN IF NOT EXISTS major TEXT,
+      ADD COLUMN IF NOT EXISTS department TEXT,
+      ADD COLUMN IF NOT EXISTS approval_status TEXT DEFAULT 'approved',
+      ADD COLUMN IF NOT EXISTS registered_at TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ
+  `);
+  await pool.query(`
+    UPDATE students SET approval_status = 'approved' WHERE approval_status IS NULL
+  `);
+}
+
+function mapPendingStudent(r) {
+  const fullName = r.name || '';
+  let title = r.prefix || '';
+  let firstName = r.first_name || '';
+  let lastName = r.last_name || '';
+  if (!firstName && fullName) {
+    const prefixes = ['นางสาว', 'นาย', 'นาง'];
+    for (const p of prefixes) {
+      if (fullName.startsWith(p)) { title = p; break; }
+    }
+    const nameOnly = title ? fullName.slice(title.length) : fullName;
+    const parts = nameOnly.trim().split(' ');
+    firstName = parts[0] || '';
+    lastName = parts.slice(1).join(' ') || '';
+  }
+  return {
+    id: r.id,
+    student_id: r.student_code,
+    student_code: r.student_code,
+    title,
+    first_name: firstName,
+    last_name: lastName,
+    name: fullName,
+    level: r.education_level || 'ปวช.',
+    year: r.class_year || r.year || '',
+    section: r.room || r.section || '',
+    department: r.major || r.department || '',
+    group_name: r.group_name,
+    line_user_id: r.line_user_id || '',
+    registered_at: r.registered_at || r.created_at,
+    approval_status: r.approval_status || 'pending'
+  };
+}
+
 const DAYS_TH = ['อาทิตย์','จันทร์','อังคาร','พุธ','พฤหัสบดี','ศุกร์','เสาร์'];
 const PERIOD_TIMES = {
   1:{s:'08:30',e:'09:20'},2:{s:'09:20',e:'10:10'},3:{s:'10:20',e:'11:10'},4:{s:'11:10',e:'12:00'},
@@ -171,10 +224,63 @@ router.delete('/schedules/:id', async (req, res) => {
 // STUDENTS — เก็บ department, year, section แยก
 // ═══════════════════════════════════════════════
 
+router.get('/students/pending', async (req, res) => {
+  try {
+    await ensureStudentApprovalColumns();
+    const result = await pool.query(
+      `SELECT id, student_code, name, group_name, education_level, department, year, section,
+              prefix, first_name, last_name, class_year, room, major,
+              line_user_id, registered_at, created_at, approval_status
+       FROM students
+       WHERE approval_status = 'pending'
+       ORDER BY COALESCE(registered_at, created_at) DESC`
+    );
+    res.json(result.rows.map(mapPendingStudent));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/students/:id/approve', async (req, res) => {
+  try {
+    await ensureStudentApprovalColumns();
+    const result = await pool.query(
+      `UPDATE students
+       SET approval_status = 'approved', is_active = TRUE, approved_at = NOW(), updated_at = NOW()
+       WHERE id = $1 AND approval_status = 'pending'
+       RETURNING id, student_code, name`,
+      [req.params.id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'ไม่พบคำขอลงทะเบียนหรือได้รับการยืนยันแล้ว' });
+    }
+    res.json({ success: true, student: result.rows[0] });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/students/:id/reject', async (req, res) => {
+  try {
+    await ensureStudentApprovalColumns();
+    const result = await pool.query(
+      `UPDATE students
+       SET approval_status = 'rejected', is_active = FALSE, line_user_id = NULL, updated_at = NOW()
+       WHERE id = $1 AND approval_status = 'pending'
+       RETURNING id, student_code, name`,
+      [req.params.id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'ไม่พบคำขอลงทะเบียนหรือดำเนินการแล้ว' });
+    }
+    res.json({ success: true, student: result.rows[0] });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 router.get('/students', async (req, res) => {
   try {
+    await ensureStudentApprovalColumns();
     const result = await pool.query(
-      "SELECT id, student_code, name, group_name, education_level, department, year, section, line_user_id FROM students WHERE is_active = TRUE ORDER BY student_code"
+      `SELECT id, student_code, name, group_name, education_level, department, year, section, line_user_id
+       FROM students
+       WHERE is_active = TRUE AND COALESCE(approval_status, 'approved') = 'approved'
+       ORDER BY student_code`
     );
     res.json(result.rows.map(r => {
       const fullName = r.name || '';
@@ -236,7 +342,7 @@ router.post('/students', async (req, res) => {
         await pool.query(
           `UPDATE students SET name = $1, group_name = $2, education_level = $3,
            department = $4, year = $5, section = $6,
-           is_active = TRUE, updated_at = NOW() WHERE student_code = $7`,
+           approval_status = 'approved', is_active = TRUE, updated_at = NOW() WHERE student_code = $7`,
           [fullName, groupName, level || 'ปวช.', department || null, year || null, section || null, code]
         );
         return res.json({ success: true, id: existing.rows[0].id, reactivated: true });
@@ -244,9 +350,10 @@ router.post('/students', async (req, res) => {
       return res.status(409).json({ error: 'รหัสนักเรียนซ้ำ' });
     }
 
+    await ensureStudentApprovalColumns();
     const result = await pool.query(
-      `INSERT INTO students (student_code, name, group_name, education_level, department, year, section)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+      `INSERT INTO students (student_code, name, group_name, education_level, department, year, section, approval_status, is_active)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'approved', TRUE) RETURNING id`,
       [code, fullName, groupName, level || 'ปวช.', department || null, year || null, section || null]
     );
     res.json({ success: true, id: result.rows[0].id });
