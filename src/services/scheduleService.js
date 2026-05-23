@@ -8,6 +8,7 @@ const { createQRSession, expirePreviousSessions } = require('./qrService');
 const { sendQRToGroup } = require('./lineService');
 
 const DEFAULT_SEND_MINUTES_BEFORE = 15;
+const LEGACY_SEND_MINUTES_BEFORE = 5; // ค่า default เก่าใน schema
 
 async function ensureScheduleTimeColumns() {
   await pool.query(`
@@ -40,6 +41,9 @@ function startScheduler() {
   });
 
   console.log('✅ Scheduler started - checking every minute (Asia/Bangkok, all days)');
+
+  // ตรวจทันทีเมื่อ server ตื่น (Render free tier มักหลับ — กันพลาดนาที trigger)
+  checkAndSendQR().catch((err) => console.error('Scheduler startup check error:', err));
 }
 
 async function getBangkokNow() {
@@ -56,6 +60,31 @@ function normalizeTimeStr(timeVal) {
   if (!timeVal) return null;
   const s = String(timeVal);
   return s.length >= 5 ? s.slice(0, 5) : s;
+}
+
+function timeToMinutes(timeVal) {
+  const normalized = normalizeTimeStr(timeVal);
+  if (!normalized) return null;
+  const [h, m] = normalized.split(':').map(Number);
+  return h * 60 + m;
+}
+
+function resolveSendMinutesBefore(value) {
+  if (value == null || value <= 0) return DEFAULT_SEND_MINUTES_BEFORE;
+  // ค่า 5 มาจาก schema default เก่า — ใช้ 15 ตามที่ระบบกำหนด
+  if (Number(value) === LEGACY_SEND_MINUTES_BEFORE) return DEFAULT_SEND_MINUTES_BEFORE;
+  return Number(value);
+}
+
+/** อยู่ในช่วงส่ง QR แล้วหรือยัง (รองรับ server ตื่นช้า ไม่ต้องตรงนาทีเป๊ะ) */
+function isWithinSendWindow(currentTime, sendTime, classStart) {
+  const now = timeToMinutes(currentTime);
+  const send = timeToMinutes(sendTime);
+  const start = timeToMinutes(classStart);
+  if (now == null || send == null || start == null) return false;
+  if (send <= start) return now >= send && now < start;
+  // กรณีข้ามเที่ยงคืน (หายาก)
+  return now >= send || now < start;
 }
 
 async function checkAndSendQR() {
@@ -106,21 +135,38 @@ async function checkAndSendQR() {
       continue;
     }
 
-    const sendBefore = schedule.send_minutes_before ?? DEFAULT_SEND_MINUTES_BEFORE;
+    const sendBefore = resolveSendMinutesBefore(schedule.send_minutes_before);
     const checkInSendTime = subtractMinutes(classStart, sendBefore);
     const checkOutSendTime = subtractMinutes(classEnd, 5);
 
-    if (currentTime === checkInSendTime) {
+    const shouldSendCheckIn = isWithinSendWindow(currentTime, checkInSendTime, classStart);
+    const shouldSendCheckOut = isWithinSendWindow(currentTime, checkOutSendTime, classEnd);
+
+    if (shouldSendCheckIn || shouldSendCheckOut) {
+      console.log(
+        `[Scheduler] ${schedule.subject_name} | now=${currentTime} start=${classStart} send=${checkInSendTime} before=${sendBefore}m | checkIn=${shouldSendCheckIn}`
+      );
+    }
+
+    if (shouldSendCheckIn) {
       const alreadySent = await hasQRBeenSent(schedule.id, 'check_in', today);
       if (!alreadySent) {
-        await sendScheduledQR(schedule, 'check_in', today);
+        try {
+          await sendScheduledQR(schedule, 'check_in', today);
+        } catch (err) {
+          console.error(`❌ Auto-send check_in failed (schedule_id=${schedule.id}):`, err.message);
+        }
       }
     }
 
-    if (currentTime === checkOutSendTime) {
+    if (shouldSendCheckOut) {
       const alreadySent = await hasQRBeenSent(schedule.id, 'check_out', today);
       if (!alreadySent) {
-        await sendScheduledQR(schedule, 'check_out', today);
+        try {
+          await sendScheduledQR(schedule, 'check_out', today);
+        } catch (err) {
+          console.error(`❌ Auto-send check_out failed (schedule_id=${schedule.id}):`, err.message);
+        }
       }
     }
   }
