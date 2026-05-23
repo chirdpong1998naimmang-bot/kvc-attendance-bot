@@ -3,6 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- LIFF redirect: ถ้า URL มี token หรือ liff.state ให้ไปหน้าเช็คชื่อทันที -->
+<script>
+  (function(){
+    var p = new URLSearchParams(window.location.search);
+    if (p.has('token') || p.has('liff.state')) {
+      window.location.replace('/liff/' + window.location.search + window.location.hash);
+    }
+  })();
+</script>
 <title>KVC Teacher Dashboard</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>

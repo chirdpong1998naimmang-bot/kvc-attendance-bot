@@ -251,20 +251,6 @@ async function initApp() {
   try {
     await liff.init({ liffId: CONFIG.LIFF_ID });
 
-    // ถ้าเปิดจากเบราว์เซอร์ปกติ (ไม่ใช่ LINE app) ให้แจ้งเตือน
-    if (!liff.isInClient()) {
-      document.getElementById('loading').innerHTML = `
-        <div style="text-align:center; padding:40px 24px; max-width:360px; margin:auto;">
-          <div style="font-size:56px; margin-bottom:16px;">📱</div>
-          <div style="font-size:18px; font-weight:600; margin-bottom:8px; color:#1A1A1A;">กรุณาเปิดผ่าน LINE</div>
-          <div style="font-size:14px; color:#6B6B6B; line-height:1.6;">
-            ระบบเช็คชื่อใช้งานได้เฉพาะในแอป LINE เท่านั้น<br>
-            กรุณากดลิงก์จากข้อความใน LINE อีกครั้ง
-          </div>
-        </div>`;
-      return;
-    }
-
     if (!liff.isLoggedIn()) {
       // ส่ง redirectUri กลับมาหน้าเดิม (พร้อม token) เพื่อไม่ให้ redirect ไปหน้า Dashboard
       liff.login({ redirectUri: window.location.href });
@@ -1395,33 +1381,4 @@ function render() {
           <p style="font-size:13px;color:var(--text2);margin:4px 0">${successType}</p>
           <p style="font-size:12px;color:var(--text3);margin-bottom:${atSummary ? '4px' : '16px'}">${cr.subjectName || ''} — ${cr.checkedAt || getTimeString()}</p>
           
-          ${cr.status === 'late' ? `<p style="color:var(--amber);font-size:12px;font-weight:600;margin-bottom:12px">สถานะ: สาย</p>` : ''}
-          ${isLeave ? `<p style="color:var(--amber);font-size:12px;margin-bottom:12px">รอครูผู้สอนตรวจสอบ</p>` : ''}
-          ${summaryHTML}
-
-          <button class="btn btn-secondary" onclick="closeApp()" style="margin-bottom:8px">ปิด</button>
-        </div>`;
-      break;
-
-    // ---- ERROR ----
-    case 'error':
-      contentHTML = `
-        <div class="panel" style="text-align:center">
-          <div class="status-icon error">✗</div>
-          <div class="panel-title" style="color:var(--red)">เกิดข้อผิดพลาด</div>
-          <p style="font-size:13px;color:var(--text2);margin:8px 0 20px">${state.errorMessage}</p>
-          <button class="btn btn-secondary" onclick="resetToScan()">ลองใหม่</button>
-        </div>`;
-      break;
-  }
-
-  app.innerHTML = headerHTML + studentCardHTML + stepsHTML + contentHTML;
-}
-
-// ============================================================
-// Start
-// ============================================================
-window.addEventListener('load', initApp);
-</script>
-</body>
-</html>
+          ${cr.status === 'late' ? `<p style="color:var(--amber);font-size:12px;font-weight:600;margin-bottom:12px">สถานะ: สาย</p
