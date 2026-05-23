@@ -7,12 +7,22 @@ const { pool } = require('../config/database');
 const { createQRSession, expirePreviousSessions } = require('./qrService');
 const { sendQRToGroup } = require('./lineService');
 
+const DEFAULT_SEND_MINUTES_BEFORE = 15;
+
+async function ensureScheduleTimeColumns() {
+  await pool.query(`
+    ALTER TABLE schedules
+      ADD COLUMN IF NOT EXISTS custom_start_time TIME,
+      ADD COLUMN IF NOT EXISTS custom_end_time TIME
+  `);
+}
+
 // ============================================================
-// ตรวจสอบตารางสอนทุกนาที แล้วส่ง QR ตามเวลาที่กำหนด
+// ตรวจสอบตารางสอนทุกนาที แล้วส่ง QR ตามเวลาที่กำหนด (เวลาไทย)
 // ============================================================
 function startScheduler() {
-  // ทำงานทุกนาที (วันจันทร์ - ศุกร์, 07:00 - 17:00)
-  cron.schedule('* 7-17 * * 1-5', async () => {
+  // ทุกนาที ทุกวัน — รองรับคาบเย็นและวันเสาร์-อาทิตย์
+  cron.schedule('* * * * *', async () => {
     try {
       await checkAndSendQR();
     } catch (err) {
@@ -29,30 +39,47 @@ function startScheduler() {
     }
   });
 
-  console.log('✅ Scheduler started - checking every minute (Mon-Fri 07:00-17:00)');
+  console.log('✅ Scheduler started - checking every minute (Asia/Bangkok, all days)');
+}
+
+async function getBangkokNow() {
+  const result = await pool.query(`
+    SELECT
+      TO_CHAR(NOW() AT TIME ZONE 'Asia/Bangkok', 'HH24:MI') AS current_time,
+      TO_CHAR(NOW() AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM-DD') AS today,
+      EXTRACT(DOW FROM (NOW() AT TIME ZONE 'Asia/Bangkok'))::int AS day_of_week
+  `);
+  return result.rows[0];
+}
+
+function normalizeTimeStr(timeVal) {
+  if (!timeVal) return null;
+  const s = String(timeVal);
+  return s.length >= 5 ? s.slice(0, 5) : s;
 }
 
 async function checkAndSendQR() {
-  const now = new Date();
-  const dayOfWeek = now.getDay(); // 0=อาทิตย์, 1=จันทร์, ...
-  const currentTime = now.toTimeString().slice(0, 5); // "HH:MM"
-  const today = now.toISOString().slice(0, 10); // "YYYY-MM-DD"
+  await ensureScheduleTimeColumns();
 
-  // ดึงตารางสอนวันนี้ที่เปิด auto_send
+  const { current_time: currentTime, today, day_of_week: dayOfWeek } = await getBangkokNow();
+
   const schedulesResult = await pool.query(
-    `SELECT s.*, 
+    `SELECT s.*,
             sub.subject_name, sub.subject_code,
             c.room_name, c.latitude, c.longitude,
             lg.line_group_id AS line_gid,
-            pt_start.start_time, pt_end.end_time
+            TO_CHAR(s.custom_start_time, 'HH24:MI') AS custom_start,
+            TO_CHAR(s.custom_end_time, 'HH24:MI') AS custom_end,
+            TO_CHAR(pt_start.start_time, 'HH24:MI') AS period_start,
+            TO_CHAR(pt_end.end_time, 'HH24:MI') AS period_end
      FROM schedules s
      JOIN subjects sub ON s.subject_id = sub.id
      JOIN classrooms c ON s.classroom_id = c.id
      LEFT JOIN line_groups lg ON s.line_group_id = lg.id
-     JOIN period_times pt_start ON s.start_period = pt_start.period_number
-     JOIN period_times pt_end ON s.end_period = pt_end.period_number
-     WHERE s.day_of_week = $1 
-       AND s.auto_send = TRUE 
+     LEFT JOIN period_times pt_start ON s.start_period = pt_start.period_number
+     LEFT JOIN period_times pt_end ON s.end_period = pt_end.period_number
+     WHERE s.day_of_week = $1
+       AND s.auto_send = TRUE
        AND s.is_active = TRUE`,
     [dayOfWeek]
   );
@@ -60,21 +87,29 @@ async function checkAndSendQR() {
   for (const schedule of schedulesResult.rows) {
     if (!schedule.line_group_id || !schedule.line_gid) {
       console.warn(
-        `⚠️ ข้ามส่ง QR อัตโนมัติ: "${schedule.subject_name}" ยังไม่ได้เลือกกลุ่ม LINE ในตารางสอน`
+        `⚠️ ข้ามส่ง QR อัตโนมัติ: "${schedule.subject_name}" ยังไม่ได้เลือกกลุ่ม LINE ในตารางสอน (schedule_id=${schedule.id})`
       );
       continue;
     }
 
-    // คำนวณเวลาส่ง QR เข้าเรียน (ก่อนเริ่มคาบ X นาที)
-    const checkInSendTime = subtractMinutes(
-      schedule.start_time,
-      schedule.send_minutes_before
+    const classStart = normalizeTimeStr(
+      schedule.custom_start || schedule.period_start
+    );
+    const classEnd = normalizeTimeStr(
+      schedule.custom_end || schedule.period_end
     );
 
-    // คำนวณเวลาส่ง QR หลังเรียน (ก่อนสิ้นสุดคาบ 5 นาที)
-    const checkOutSendTime = subtractMinutes(schedule.end_time, 5);
+    if (!classStart || !classEnd) {
+      console.warn(
+        `⚠️ ข้ามส่ง QR อัตโนมัติ: "${schedule.subject_name}" ไม่มีเวลาเริ่ม/สิ้นสุดคาบ (schedule_id=${schedule.id})`
+      );
+      continue;
+    }
 
-    // ---- ส่ง QR เข้าเรียน ----
+    const sendBefore = schedule.send_minutes_before ?? DEFAULT_SEND_MINUTES_BEFORE;
+    const checkInSendTime = subtractMinutes(classStart, sendBefore);
+    const checkOutSendTime = subtractMinutes(classEnd, 5);
+
     if (currentTime === checkInSendTime) {
       const alreadySent = await hasQRBeenSent(schedule.id, 'check_in', today);
       if (!alreadySent) {
@@ -82,7 +117,6 @@ async function checkAndSendQR() {
       }
     }
 
-    // ---- ส่ง QR หลังเรียน ----
     if (currentTime === checkOutSendTime) {
       const alreadySent = await hasQRBeenSent(schedule.id, 'check_out', today);
       if (!alreadySent) {
@@ -100,20 +134,19 @@ async function sendScheduledQR(schedule, qrType, today) {
 
   console.log(`🔄 Auto-sending ${qrType} QR for: ${schedule.subject_name} → group ${schedule.line_gid}`);
 
-  // ยกเลิก QR เก่าของ schedule เดียวกัน (ถ้ามี)
   await expirePreviousSessions(schedule.id, qrType, today);
 
-  // สร้าง QR Session ใหม่
   const qrSession = await createQRSession({
     scheduleId: schedule.id,
     subjectId: schedule.subject_id,
     teacherId: schedule.teacher_id,
     lineGroupId: schedule.line_group_id,
-    qrType
+    qrType,
+    sessionDate: today
   });
 
-  // ส่ง Flex Message เข้ากลุ่มไลน์
   const sentAt = new Date().toLocaleTimeString('th-TH', {
+    timeZone: 'Asia/Bangkok',
     hour: '2-digit',
     minute: '2-digit'
   });
@@ -126,7 +159,6 @@ async function sendScheduledQR(schedule, qrType, today) {
     sentAt
   });
 
-  // บันทึก Log
   await pool.query(
     `INSERT INTO system_logs (event_type, event_data, teacher_id)
      VALUES ('qr_auto_sent', $1, $2)`,
@@ -145,31 +177,30 @@ async function sendScheduledQR(schedule, qrType, today) {
   console.log(`✅ Auto-sent ${qrType} QR: ${qrSession.token} → ${schedule.subject_name}`);
 }
 
-// ตรวจสอบว่าวันนี้ส่ง QR ไปแล้วหรือยัง
 async function hasQRBeenSent(scheduleId, qrType, date) {
   const result = await pool.query(
-    `SELECT id FROM qr_sessions 
-     WHERE schedule_id = $1 AND qr_type = $2 AND session_date = $3 
+    `SELECT id FROM qr_sessions
+     WHERE schedule_id = $1 AND qr_type = $2 AND session_date = $3
        AND status = 'active'`,
     [scheduleId, qrType, date]
   );
   return result.rows.length > 0;
 }
 
-// ลบเวลาออก X นาที ("08:30" - 5 = "08:25")
 function subtractMinutes(timeStr, minutes) {
-  const [h, m] = timeStr.split(':').map(Number);
-  const totalMinutes = h * 60 + m - minutes;
-  const newH = Math.floor(totalMinutes / 60);
+  const normalized = normalizeTimeStr(timeStr);
+  const [h, m] = normalized.split(':').map(Number);
+  let totalMinutes = h * 60 + m - minutes;
+  if (totalMinutes < 0) totalMinutes += 24 * 60;
+  const newH = Math.floor(totalMinutes / 60) % 24;
   const newM = totalMinutes % 60;
   return `${String(newH).padStart(2, '0')}:${String(newM).padStart(2, '0')}`;
 }
 
-// ทำให้ QR Sessions ที่หมดอายุเปลี่ยนสถานะ
 async function expireOldSessions() {
   const result = await pool.query(
-    `UPDATE qr_sessions 
-     SET status = 'expired' 
+    `UPDATE qr_sessions
+     SET status = 'expired'
      WHERE status = 'active' AND expires_at < NOW()`
   );
   if (result.rowCount > 0) {

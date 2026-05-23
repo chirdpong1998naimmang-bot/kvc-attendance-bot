@@ -47,6 +47,37 @@ function formatThaiDateLong(dateStr) {
   return `${day} ${month} ${year}`;
 }
 
+const NAME_PREFIXES = ['นางสาว', 'นาย', 'นาง'];
+
+/** แยกชื่อ-สกุลสำหรับรายงาน: ใช้ prefix/first_name/last_name ก่อน ไม่ parse จาก name ถ้ามี field แยก */
+function splitStudentNameForReport(student) {
+  const first = (student.first_name || '').trim();
+  const last = (student.last_name || '').trim();
+
+  if (first || last) {
+    return {
+      firstName: first || '-',
+      lastName: last || '-'
+    };
+  }
+
+  const fullName = (student.name || '').trim();
+  if (!fullName) return { firstName: '-', lastName: '-' };
+
+  let title = '';
+  for (const p of NAME_PREFIXES) {
+    if (fullName.startsWith(p)) {
+      title = p;
+      break;
+    }
+  }
+  const nameOnly = title ? fullName.slice(title.length).trim() : fullName;
+  const parts = nameOnly.split(/\s+/).filter(Boolean);
+  const firstName = title + (parts[0] || '');
+  const lastName = parts.slice(1).join(' ') || '-';
+  return { firstName: firstName || '-', lastName };
+}
+
 // ── GET /api/report/filters ──
 router.get('/filters', async (req, res) => {
   try {
@@ -125,7 +156,7 @@ async function fetchReportData({ subject_id, section, date_from, date_to, semest
 
   // ดึงนักเรียน — match group_name กับ section (ทั้งแบบยาวและสั้น)
   const studentsResult = await pool.query(
-    `SELECT id, student_code, name, group_name
+    `SELECT id, student_code, name, prefix, first_name, last_name, group_name
      FROM students
      WHERE is_active = TRUE
        AND (group_name = $1 OR group_name = $2)
@@ -197,17 +228,7 @@ async function fetchReportData({ subject_id, section, date_from, date_to, semest
 
   // สร้างตาราง matrix: นักเรียน × คอลัมน์วัน
   const matrix = students.map((st, idx) => {
-    // แยกชื่อ-สกุลจาก name (เช่น "นางสาวชญานันท์ ด้วงปลี")
-    const fullName = st.name || '';
-    let firstName = fullName, lastName = '-';
-    for (const p of ['นางสาว','นาย','นาง']) {
-      if (fullName.startsWith(p)) {
-        const rest = fullName.slice(p.length).trim().split(' ');
-        firstName = p + (rest[0] || '');
-        lastName = rest.slice(1).join(' ') || '-';
-        break;
-      }
-    }
+    const { firstName, lastName } = splitStudentNameForReport(st);
 
     const statuses = columns.map(col => {
       const record = attMap[`${st.id}|${col.date}|${col.scheduleId}`];
@@ -450,7 +471,7 @@ router.get('/time-preview', async (req, res) => {
 
     // ดึงนักเรียน
     const studentsResult = await pool.query(
-      `SELECT id, student_code, name, group_name
+      `SELECT id, student_code, name, prefix, first_name, last_name, group_name
        FROM students WHERE is_active = TRUE
        AND (group_name = $1 OR group_name = $2)
        ORDER BY student_code`,
@@ -478,16 +499,7 @@ router.get('/time-preview', async (req, res) => {
 
     // สร้างข้อมูลนักเรียน
     const rows = studentsResult.rows.map((st, idx) => {
-      const fullName = st.name || '';
-      let firstName = fullName, lastName = '-';
-      for (const p of ['นางสาว','นาย','นาง']) {
-        if (fullName.startsWith(p)) {
-          const rest = fullName.slice(p.length).trim().split(' ');
-          firstName = p + (rest[0] || '');
-          lastName = rest.slice(1).join(' ') || '-';
-          break;
-        }
-      }
+      const { firstName, lastName } = splitStudentNameForReport(st);
 
       const att = attMap[st.id];
       let actualMinutes = 0, percent = 0, passed = false;

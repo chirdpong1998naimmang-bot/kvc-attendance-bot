@@ -18,7 +18,7 @@ function generateToken(length = 8) {
 }
 
 // สร้าง QR Session ใหม่
-async function createQRSession({ scheduleId, subjectId, teacherId, lineGroupId, qrType }) {
+async function createQRSession({ scheduleId, subjectId, teacherId, lineGroupId, qrType, sessionDate }) {
   // สร้าง token ที่ไม่ซ้ำ
   let token;
   let attempts = 0;
@@ -31,12 +31,20 @@ async function createQRSession({ scheduleId, subjectId, teacherId, lineGroupId, 
 
   const expiresAt = new Date(Date.now() + QR_EXPIRE_MINUTES * 60 * 1000);
 
+  let sessionDateVal = sessionDate;
+  if (!sessionDateVal) {
+    const dateRes = await pool.query(
+      `SELECT (NOW() AT TIME ZONE 'Asia/Bangkok')::date AS d`
+    );
+    sessionDateVal = dateRes.rows[0].d;
+  }
+
   const result = await pool.query(
     `INSERT INTO qr_sessions 
-      (schedule_id, subject_id, teacher_id, line_group_id, token, qr_type, expires_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
+      (schedule_id, subject_id, teacher_id, line_group_id, token, qr_type, expires_at, session_date)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
      RETURNING *`,
-    [scheduleId, subjectId, teacherId, lineGroupId, token, qrType, expiresAt]
+    [scheduleId, subjectId, teacherId, lineGroupId, token, qrType, expiresAt, sessionDateVal]
   );
 
   console.log(`✅ QR created: ${token} (${qrType}) expires ${expiresAt.toLocaleTimeString('th-TH')}`);
