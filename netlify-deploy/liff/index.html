@@ -226,6 +226,24 @@ let state = {
   storedEmbedding: null,   // embedding จาก DB สำหรับเปรียบเทียบ
 };
 
+function getTokenFromUrl() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const directToken = urlParams.get('token');
+  if (directToken) return directToken;
+
+  const liffState = urlParams.get('liff.state');
+  if (!liffState) return null;
+
+  try {
+    const decoded = decodeURIComponent(liffState);
+    const stateUrl = new URL(decoded, window.location.origin);
+    return stateUrl.searchParams.get('token');
+  } catch (err) {
+    const normalized = liffState.startsWith('?') ? liffState.slice(1) : liffState;
+    return new URLSearchParams(normalized).get('token');
+  }
+}
+
 // ============================================================
 // Initialize LIFF
 // ============================================================
@@ -241,8 +259,7 @@ async function initApp() {
     state.profile = await liff.getProfile();
 
     // ตรวจสอบ token จาก URL (ถ้ามาจากปุ่มในข้อความ QR)
-    const urlParams = new URLSearchParams(window.location.search);
-    const tokenFromUrl = urlParams.get('token');
+    const tokenFromUrl = getTokenFromUrl();
     if (tokenFromUrl) {
       state.token = tokenFromUrl.toUpperCase();
     }

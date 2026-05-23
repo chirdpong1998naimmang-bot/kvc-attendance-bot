@@ -10,12 +10,12 @@ const client = new line.messagingApi.MessagingApiClient({
 
 function buildLiffUrl(token) {
   const configured = String(process.env.LIFF_URL || '').trim();
-  const base = configured || 'https://whimsical-duckanoo-0385e2.netlify.app/liff/index.html';
-  const liffPage = /\/liff\/index\.html(?:$|\?)/.test(base)
-    ? base
-    : `${base.replace(/\/+$/, '')}/liff/index.html`;
-  const separator = liffPage.includes('?') ? '&' : '?';
-  return `${liffPage}${separator}token=${encodeURIComponent(token)}`;
+  const liffId = String(process.env.LIFF_ID || '2009878792-1yb5rLNs').trim();
+  const base = configured.startsWith('https://liff.line.me/')
+    ? configured
+    : `https://liff.line.me/${liffId}`;
+  const separator = base.includes('?') ? '&' : '?';
+  return `${base}${separator}token=${encodeURIComponent(token)}`;
 }
 
 // ส่ง Flex Message พร้อม QR Code เข้ากลุ่ม
