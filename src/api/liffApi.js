@@ -1134,4 +1134,17 @@ router.get('/test-qr', async (req, res) => {
   }
 });
 
+
+// GET /api/liff/departments-public — รายชื่อสาขาวิชาสำหรับ LIFF
+router.get('/departments-public', async (req, res) => {
+  try {
+    const result = await pool.query(
+      "SELECT id, name FROM departments WHERE is_active = TRUE ORDER BY name"
+    );
+    res.json(result.rows);
+  } catch (err) {
+    res.json([]); // fallback ไม่ error
+  }
+});
+
 module.exports = { liffApiRouter: router };
