@@ -334,13 +334,20 @@ async function initApp() {
 // ============================================================
 async function apiCall(path, options = {}) {
   try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15000);
     const res = await fetch(CONFIG.API_BASE + path, {
       headers: { 'Content-Type': 'application/json', ...options.headers },
+      signal: controller.signal,
       ...options,
     });
+    clearTimeout(timer);
     return await res.json();
   } catch (err) {
     console.error('API error:', err);
+    if (err.name === 'AbortError') {
+      showToast('เซิร์ฟเวอร์ใช้เวลานาน กรุณาลองใหม่อีกครั้ง');
+    }
     return null;
   }
 }
