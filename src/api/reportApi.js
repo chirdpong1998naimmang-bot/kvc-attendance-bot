@@ -605,11 +605,14 @@ router.get('/absence-rate', async (req, res) => {
       [schedSection, shortSection]
     );
 
-    // ดึง QR sessions ของวิชานี้
+    // ดึง QR sessions เฉพาะที่มีนักเรียนเช็คชื่อจริงอย่างน้อย 1 คน
     const sessionsResult = await pool.query(
       `SELECT qs.id, qs.session_date
        FROM qr_sessions qs
        WHERE qs.subject_id = $1 AND qs.qr_type = 'check_in'
+         AND EXISTS (
+           SELECT 1 FROM attendance_records ar WHERE ar.qr_session_id = qs.id
+         )
        ORDER BY qs.session_date`,
       [subject_id]
     );
