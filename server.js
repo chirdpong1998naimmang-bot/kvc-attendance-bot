@@ -94,8 +94,13 @@ async function connectDatabaseWithRetry(maxAttempts = 5) {
 
 async function runStartupMigrations() {
   try {
-    await pool.query('ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS checked_out_at TIMESTAMP');
-    console.log('✅ Migration: checked_out_at column ready');
+    await pool.query(`
+      ALTER TABLE attendance_records
+        ADD COLUMN IF NOT EXISTS checked_out_at TIMESTAMP,
+        ADD COLUMN IF NOT EXISTS remark TEXT,
+        ADD COLUMN IF NOT EXISTS is_manual BOOLEAN DEFAULT FALSE
+    `);
+    console.log('✅ Migration: attendance_records base columns ready');
   } catch (err) {
     console.warn('⚠️ Migration warning:', err.message);
   }
