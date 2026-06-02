@@ -98,7 +98,11 @@ async function runStartupMigrations() {
       ALTER TABLE attendance_records
         ADD COLUMN IF NOT EXISTS checked_out_at TIMESTAMP,
         ADD COLUMN IF NOT EXISTS remark TEXT,
-        ADD COLUMN IF NOT EXISTS is_manual BOOLEAN DEFAULT FALSE
+        ADD COLUMN IF NOT EXISTS is_manual BOOLEAN DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW(),
+        ADD COLUMN IF NOT EXISTS leave_type VARCHAR(20),
+        ADD COLUMN IF NOT EXISTS leave_reason TEXT,
+        ADD COLUMN IF NOT EXISTS leave_image TEXT
     `);
     console.log('✅ Migration: attendance_records base columns ready');
   } catch (err) {
