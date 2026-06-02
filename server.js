@@ -51,17 +51,24 @@ app.use('/api/report', express.json({ limit: '10mb' }), reportApiRouter);
 app.use('/api', express.json({ limit: '10mb' }), dashboardApiRouter);
 
 
-// Health check
+// Health check — ไม่ให้ DB ล่มแล้ว Render restart loop
 app.get('/health', async (req, res) => {
+  const payload = {
+    status: 'ok',
+    uptime: process.uptime(),
+    database: 'unknown'
+  };
   try {
     const dbResult = await pool.query('SELECT NOW()');
-    res.json({
-      status: 'ok',
-      timestamp: dbResult.rows[0].now,
-      uptime: process.uptime()
-    });
+    payload.database = 'connected';
+    payload.timestamp = dbResult.rows[0].now;
+    res.json(payload);
   } catch (err) {
-    res.status(500).json({ status: 'error', message: err.message });
+    payload.status = 'degraded';
+    payload.database = 'disconnected';
+    payload.dbError = err.message;
+    console.error('Health check DB error:', err.message);
+    res.status(200).json(payload);
   }
 });
 
@@ -69,19 +76,47 @@ app.get('/health', async (req, res) => {
 // Start Server
 // ============================================================
 
-async function start() {
-  // ทดสอบเชื่อมต่อ Database
-  await testConnection();
-  await autoInitDatabase();
+async function connectDatabaseWithRetry(maxAttempts = 5) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      await testConnection();
+      return;
+    } catch (err) {
+      console.error(`❌ Database connection attempt ${attempt}/${maxAttempts}:`, err.message);
+      if (!process.env.DATABASE_URL) {
+        console.error('❌ ไม่พบ DATABASE_URL — ตรวจ Environment บน Render ว่าผูก attendance-db แล้ว');
+      }
+      if (attempt === maxAttempts) throw err;
+      await new Promise((r) => setTimeout(r, 4000 * attempt));
+    }
+  }
+}
 
-  // Migration: เพิ่มคอลัมน์ checked_out_at (รันซ้ำได้ปลอดภัย)
+async function runStartupMigrations() {
   try {
     await pool.query('ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS checked_out_at TIMESTAMP');
     console.log('✅ Migration: checked_out_at column ready');
   } catch (err) {
     console.warn('⚠️ Migration warning:', err.message);
   }
-  
+
+  try {
+    await pool.query(`
+      ALTER TABLE schedules
+        ADD COLUMN IF NOT EXISTS custom_start_time TIME,
+        ADD COLUMN IF NOT EXISTS custom_end_time TIME
+    `);
+    console.log('✅ Migration: schedule custom time columns ready');
+  } catch (err) {
+    console.warn('⚠️ Schedule time migration warning:', err.message);
+  }
+}
+
+async function start() {
+  await connectDatabaseWithRetry();
+  await autoInitDatabase();
+  await runStartupMigrations();
+
   // เริ่ม Cron Job ส่ง QR อัตโนมัติ
   startScheduler();
 

@@ -11,11 +11,15 @@ const DEFAULT_SEND_MINUTES_BEFORE = 15;
 const LEGACY_SEND_MINUTES_BEFORE = 5; // ค่า default เก่าใน schema
 
 async function ensureScheduleTimeColumns() {
-  await pool.query(`
-    ALTER TABLE schedules
-      ADD COLUMN IF NOT EXISTS custom_start_time TIME,
-      ADD COLUMN IF NOT EXISTS custom_end_time TIME
-  `);
+  try {
+    await pool.query(`
+      ALTER TABLE schedules
+        ADD COLUMN IF NOT EXISTS custom_start_time TIME,
+        ADD COLUMN IF NOT EXISTS custom_end_time TIME
+    `);
+  } catch (err) {
+    console.warn('⚠️ ensureScheduleTimeColumns:', err.message);
+  }
 }
 
 // ============================================================
@@ -88,11 +92,12 @@ function isWithinSendWindow(currentTime, sendTime, classStart) {
 }
 
 async function checkAndSendQR() {
-  await ensureScheduleTimeColumns();
+  try {
+    await ensureScheduleTimeColumns();
 
-  const { current_time: currentTime, today, day_of_week: dayOfWeek } = await getBangkokNow();
+    const { current_time: currentTime, today, day_of_week: dayOfWeek } = await getBangkokNow();
 
-  const schedulesResult = await pool.query(
+    const schedulesResult = await pool.query(
     `SELECT s.*,
             sub.subject_name, sub.subject_code,
             c.room_name, c.latitude, c.longitude,
@@ -169,6 +174,10 @@ async function checkAndSendQR() {
         }
       }
     }
+  }
+  } catch (err) {
+    console.error('checkAndSendQR error:', err.message);
+    if (err.stack) console.error(err.stack);
   }
 }
 

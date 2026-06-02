@@ -247,9 +247,32 @@ function getTokenFromUrl() {
 // ============================================================
 // Initialize LIFF
 // ============================================================
+function showOpenInLineMessage() {
+  const token = new URLSearchParams(window.location.search).get('token') ||
+    (() => { try { const s = new URLSearchParams(window.location.search).get('liff.state') || ''; return new URLSearchParams(s.replace(/^\?/,'')).get('token') || ''; } catch(e){ return ''; } })();
+  document.getElementById('loading').innerHTML = `
+    <div style="text-align:center;padding:40px 24px;max-width:360px;margin:auto;">
+      <div style="font-size:56px;margin-bottom:16px;">📱</div>
+      <div style="font-size:18px;font-weight:600;margin-bottom:8px;color:#1A1A1A;">กรุณาเปิดใน LINE</div>
+      <div style="font-size:14px;color:#6B6B6B;line-height:1.8;margin-bottom:20px;">
+        ระบบเช็คชื่อต้องเปิดผ่าน<br><strong>แอป LINE บนมือถือ</strong> เท่านั้น<br>
+        LINE บนคอมพิวเตอร์ไม่รองรับ LIFF
+      </div>
+      ${token ? `<div style="background:#f5f5f5;padding:12px 16px;border-radius:10px;font-size:13px;color:#444;margin-bottom:16px;">
+        Token: <strong>${token}</strong><br>
+        <span style="color:#888;font-size:12px;">นำ token นี้ไปกรอกในมือถือได้</span>
+      </div>` : ''}
+      <div style="font-size:13px;color:#888;">กดปุ่มเช็คชื่อในมือถือที่มี LINE</div>
+    </div>`;
+}
+
 async function initApp() {
   try {
-    await liff.init({ liffId: CONFIG.LIFF_ID });
+    // timeout 10 วินาที — ถ้า liff.init ค้าง แสดงว่า browser ไม่รองรับ
+    await Promise.race([
+      liff.init({ liffId: CONFIG.LIFF_ID }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('LIFF_TIMEOUT')), 10000))
+    ]);
 
     if (!liff.isLoggedIn()) {
       // ส่ง redirectUri กลับมาหน้าเดิม (พร้อม token) เพื่อไม่ให้ redirect ไปหน้า Dashboard
@@ -292,6 +315,11 @@ async function initApp() {
     }
   } catch (err) {
     console.error('Init error:', err);
+    // LIFF ค้าง = browser ไม่รองรับ (LINE desktop / external browser)
+    if (err.message === 'LIFF_TIMEOUT' || err.code === 'INIT_FAILED') {
+      showOpenInLineMessage();
+      return;
+    }
     state.step = 'error';
     state.errorMessage = 'ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่';
   }
