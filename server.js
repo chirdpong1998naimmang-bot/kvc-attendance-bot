@@ -130,6 +130,16 @@ async function runStartupMigrations() {
   } catch (err) {
     console.warn('⚠️ Students migration warning:', err.message);
   }
+
+  try {
+    await pool.query(`
+      ALTER TABLE face_embeddings
+        ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE
+    `);
+    console.log('✅ Migration: face_embeddings is_active ready');
+  } catch (err) {
+    console.warn('⚠️ face_embeddings migration warning:', err.message);
+  }
 }
 
 async function start() {
