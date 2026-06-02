@@ -112,6 +112,24 @@ async function runStartupMigrations() {
   } catch (err) {
     console.warn('⚠️ Schedule migration warning:', err.message);
   }
+
+  try {
+    await pool.query(`
+      ALTER TABLE students
+        ADD COLUMN IF NOT EXISTS class_year TEXT,
+        ADD COLUMN IF NOT EXISTS room TEXT,
+        ADD COLUMN IF NOT EXISTS major TEXT,
+        ADD COLUMN IF NOT EXISTS department TEXT,
+        ADD COLUMN IF NOT EXISTS year TEXT,
+        ADD COLUMN IF NOT EXISTS section TEXT,
+        ADD COLUMN IF NOT EXISTS prefix TEXT,
+        ADD COLUMN IF NOT EXISTS first_name TEXT,
+        ADD COLUMN IF NOT EXISTS last_name TEXT
+    `);
+    console.log('✅ Migration: students columns ready');
+  } catch (err) {
+    console.warn('⚠️ Students migration warning:', err.message);
+  }
 }
 
 async function start() {
