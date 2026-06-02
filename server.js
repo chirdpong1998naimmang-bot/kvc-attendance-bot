@@ -104,11 +104,13 @@ async function runStartupMigrations() {
     await pool.query(`
       ALTER TABLE schedules
         ADD COLUMN IF NOT EXISTS custom_start_time TIME,
-        ADD COLUMN IF NOT EXISTS custom_end_time TIME
+        ADD COLUMN IF NOT EXISTS custom_end_time TIME,
+        ADD COLUMN IF NOT EXISTS academic_year VARCHAR(10),
+        ADD COLUMN IF NOT EXISTS section VARCHAR(20)
     `);
-    console.log('✅ Migration: schedule custom time columns ready');
+    console.log('✅ Migration: schedule columns ready');
   } catch (err) {
-    console.warn('⚠️ Schedule time migration warning:', err.message);
+    console.warn('⚠️ Schedule migration warning:', err.message);
   }
 }
 
@@ -131,8 +133,3 @@ async function start() {
     `);
   });
 }
-
-start().catch(err => {
-  console.error('Failed to start server:', err);
-  process.exit(1);
-});
