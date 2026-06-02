@@ -140,6 +140,20 @@ async function runStartupMigrations() {
   } catch (err) {
     console.warn('⚠️ face_embeddings migration warning:', err.message);
   }
+
+  try {
+    await pool.query(`
+      ALTER TABLE attendance_records
+        ADD COLUMN IF NOT EXISTS schedule_id UUID REFERENCES schedules(id) ON DELETE SET NULL,
+        ADD COLUMN IF NOT EXISTS leave_type VARCHAR(20),
+        ADD COLUMN IF NOT EXISTS leave_reason TEXT,
+        ADD COLUMN IF NOT EXISTS approved_by UUID,
+        ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ
+    `);
+    console.log('✅ Migration: attendance_records columns ready');
+  } catch (err) {
+    console.warn('⚠️ attendance_records migration warning:', err.message);
+  }
 }
 
 async function start() {
