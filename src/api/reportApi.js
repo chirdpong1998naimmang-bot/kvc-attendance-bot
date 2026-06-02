@@ -554,3 +554,179 @@ router.get('/time-preview', async (req, res) => {
 });
 
 module.exports = { reportApiRouter: router };
+
+// ═══════════════════════════════════════════
+// รายงานร้อยละการขาดเรียน + แจ้ง ขร.
+// GET /api/report/absence-rate?subject_id=&section=
+// ═══════════════════════════════════════════
+router.get('/absence-rate', async (req, res) => {
+  try {
+    const { subject_id, section } = req.query;
+    if (!subject_id) return res.status(400).json({ error: 'กรุณาเลือกรายวิชา' });
+
+    // ดึงข้อมูลตารางสอน
+    const schedResult = await pool.query(
+      `SELECT s.id, s.custom_start_time, s.custom_end_time,
+              s.start_period, s.end_period, s.section,
+              sub.subject_code, sub.subject_name, sub.credits,
+              t.name AS teacher_name
+       FROM schedules s
+       JOIN subjects sub ON s.subject_id = sub.id
+       LEFT JOIN teachers t ON s.teacher_id = t.id
+       WHERE s.subject_id = $1 AND s.is_active = TRUE
+       ${section ? 'AND s.section = $2' : ''}
+       LIMIT 1`,
+      section ? [subject_id, section] : [subject_id]
+    );
+    if (schedResult.rows.length === 0) return res.status(404).json({ error: 'ไม่พบตารางสอน' });
+
+    const sched = schedResult.rows[0];
+    // คำนวณเวลาต่อครั้ง (นาที)
+    let minutesPerSession = 50; // default 1 คาบ
+    if (sched.custom_start_time && sched.custom_end_time) {
+      const [sh, sm] = sched.custom_start_time.split(':').map(Number);
+      const [eh, em] = sched.custom_end_time.split(':').map(Number);
+      minutesPerSession = (eh * 60 + em) - (sh * 60 + sm);
+    } else if (sched.start_period && sched.end_period) {
+      minutesPerSession = (sched.end_period - sched.start_period + 1) * 50;
+    }
+    const WEEKS = 18;
+    const totalMinutes = minutesPerSession * WEEKS; // เวลาทั้งภาค
+    const totalHours = (totalMinutes / 60).toFixed(1);
+
+    // ดึงนักเรียน
+    const schedSection = sched.section || '';
+    const shortSection = schedSection.split(' - ')[0].trim() || schedSection;
+    const studentsResult = await pool.query(
+      `SELECT id, student_code, name, prefix, first_name, last_name
+       FROM students WHERE is_active = TRUE
+       AND (group_name = $1 OR group_name = $2)
+       ORDER BY student_code`,
+      [schedSection, shortSection]
+    );
+
+    // ดึง QR sessions ของวิชานี้
+    const sessionsResult = await pool.query(
+      `SELECT qs.id, qs.session_date
+       FROM qr_sessions qs
+       WHERE qs.subject_id = $1 AND qs.qr_type = 'check_in'
+       ORDER BY qs.session_date`,
+      [subject_id]
+    );
+    const sessionIds = sessionsResult.rows.map(r => r.id);
+    const sessionCount = sessionIds.length;
+
+    // ดึง attendance records
+    let attendanceMap = {};
+    if (sessionIds.length > 0) {
+      const attResult = await pool.query(
+        `SELECT ar.student_id, ar.status, ar.checked_at, ar.checked_out_at
+         FROM attendance_records ar
+         WHERE ar.qr_session_id = ANY($1::uuid[])`,
+        [sessionIds]
+      );
+      attResult.rows.forEach(r => {
+        if (!attendanceMap[r.student_id]) attendanceMap[r.student_id] = [];
+        attendanceMap[r.student_id].push(r);
+      });
+    }
+
+    const students = studentsResult.rows.map(st => {
+      const records = attendanceMap[st.id] || [];
+      const absentCount = sessionCount - records.filter(r =>
+        r.status === 'present' || r.status === 'late' ||
+        r.status === 'sick_leave' || r.status === 'personal_leave'
+      ).length;
+      const absentMinutes = absentCount * minutesPerSession;
+      const absentHours = (absentMinutes / 60).toFixed(1);
+      const attendancePercent = totalMinutes > 0
+        ? Math.max(0, ((totalMinutes - absentMinutes) / totalMinutes * 100)).toFixed(1)
+        : '100.0';
+      const name = st.name || `${st.prefix||''}${st.first_name||''} ${st.last_name||''}`.trim();
+      return {
+        studentCode: st.student_code,
+        prefix: st.prefix || '',
+        firstName: st.first_name || name.split(' ')[0] || name,
+        lastName: st.last_name || name.split(' ').slice(1).join(' ') || '',
+        absentCount,
+        absentHours: parseFloat(absentHours),
+        attendancePercent: parseFloat(attendancePercent),
+        pass: parseFloat(attendancePercent) >= 80
+      };
+    });
+
+    res.json({
+      subjectCode: sched.subject_code,
+      subjectName: sched.subject_name,
+      teacherName: sched.teacher_name || '',
+      section: schedSection,
+      totalHours,
+      totalMinutes,
+      minutesPerSession,
+      sessionCount,
+      weeks: WEEKS,
+      students
+    });
+  } catch (err) {
+    console.error('Absence rate error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ═══════════════════════════════════════════
+// รายงานบันทึกเวลาเข้า-ออก
+// GET /api/report/checkin-log?subject_id=&section=&date_from=&date_to=
+// ═══════════════════════════════════════════
+router.get('/checkin-log', async (req, res) => {
+  try {
+    const { subject_id, section, date_from, date_to } = req.query;
+    if (!subject_id) return res.status(400).json({ error: 'กรุณาเลือกรายวิชา' });
+
+    let dateFilter = '';
+    const params = [subject_id];
+    if (date_from) { params.push(date_from); dateFilter += ` AND DATE(ar.checked_at AT TIME ZONE 'Asia/Bangkok') >= $${params.length}`; }
+    if (date_to) { params.push(date_to); dateFilter += ` AND DATE(ar.checked_at AT TIME ZONE 'Asia/Bangkok') <= $${params.length}`; }
+
+    const result = await pool.query(
+      `SELECT ar.id,
+              st.student_code, st.name, st.prefix, st.first_name, st.last_name,
+              sub.subject_code, sub.subject_name,
+              ar.status,
+              ar.checked_at AT TIME ZONE 'Asia/Bangkok' AS check_in_th,
+              ar.checked_out_at AT TIME ZONE 'Asia/Bangkok' AS check_out_th,
+              ar.face_confidence, ar.is_manual, ar.remark
+       FROM attendance_records ar
+       JOIN students st ON ar.student_id = st.id
+       JOIN qr_sessions qs ON ar.qr_session_id = qs.id
+       JOIN subjects sub ON qs.subject_id = sub.id
+       WHERE sub.id = $1 ${dateFilter}
+       ORDER BY ar.checked_at DESC`,
+      params
+    );
+
+    const rows = result.rows.map(r => {
+      const name = r.name || `${r.prefix||''}${r.first_name||''} ${r.last_name||''}`.trim();
+      const checkIn = r.check_in_th ? new Date(r.check_in_th) : null;
+      const checkOut = r.check_out_th ? new Date(r.check_out_th) : null;
+      const durationMin = checkIn && checkOut
+        ? Math.round((checkOut - checkIn) / 60000) : null;
+      return {
+        studentCode: r.student_code,
+        name,
+        status: r.status,
+        date: checkIn ? checkIn.toLocaleDateString('th-TH', { timeZone: 'UTC' }) : '-',
+        checkIn: checkIn ? checkIn.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' }) : '-',
+        checkOut: checkOut ? checkOut.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' }) : '-',
+        duration: durationMin !== null ? `${Math.floor(durationMin/60)} ชม. ${durationMin%60} น.` : '-',
+        faceConfidence: r.face_confidence ? `${Math.round(r.face_confidence)}%` : '-',
+        isManual: r.is_manual || false,
+        remark: r.remark || ''
+      };
+    });
+
+    res.json({ rows, subjectCode: result.rows[0]?.subject_code || '', subjectName: result.rows[0]?.subject_name || '' });
+  } catch (err) {
+    console.error('Checkin log error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
