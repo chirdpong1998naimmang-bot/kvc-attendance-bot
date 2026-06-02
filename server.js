@@ -96,7 +96,7 @@ async function runStartupMigrations() {
   try {
     await pool.query(`
       ALTER TABLE attendance_records
-        ADD COLUMN IF NOT EXISTS checked_out_at TIMESTAMP,
+        ADD COLUMN IF NOT EXISTS checked_out_at TIMESTAMPTZ,
         ADD COLUMN IF NOT EXISTS remark TEXT,
         ADD COLUMN IF NOT EXISTS is_manual BOOLEAN DEFAULT FALSE,
         ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW(),
@@ -148,6 +148,16 @@ async function runStartupMigrations() {
     console.log('✅ Migration: face_embeddings is_active ready');
   } catch (err) {
     console.warn('⚠️ face_embeddings migration warning:', err.message);
+  }
+
+  try {
+    await pool.query(`
+      ALTER TABLE attendance_records
+        ALTER COLUMN checked_out_at TYPE TIMESTAMPTZ USING checked_out_at AT TIME ZONE 'UTC'
+    `);
+    console.log('✅ Migration: checked_out_at type fixed');
+  } catch (err) {
+    console.warn('⚠️ checked_out_at type migration warning:', err.message);
   }
 
   try {
