@@ -173,6 +173,35 @@ async function runStartupMigrations() {
   } catch (err) {
     console.warn('⚠️ attendance_records migration warning:', err.message);
   }
+
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS departments (
+        id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        name        VARCHAR(100) NOT NULL UNIQUE,
+        short_name  VARCHAR(30),
+        is_active   BOOLEAN DEFAULT TRUE,
+        created_at  TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    console.log('✅ Migration: departments table ready');
+  } catch (err) {
+    console.warn('⚠️ departments migration warning:', err.message);
+  }
+
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS holidays (
+        id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        date        DATE NOT NULL UNIQUE,
+        name        VARCHAR(200) NOT NULL,
+        created_at  TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    console.log('✅ Migration: holidays table ready');
+  } catch (err) {
+    console.warn('⚠️ holidays migration warning:', err.message);
+  }
 }
 
 async function start() {
