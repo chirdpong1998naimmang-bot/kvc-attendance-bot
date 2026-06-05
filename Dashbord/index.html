@@ -3,6 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- LIFF redirect: ถ้า URL มี token หรือ liff.state ให้ไปหน้าเช็คชื่อทันที -->
+<script>
+  (function(){
+    var p = new URLSearchParams(window.location.search);
+    if (p.has('token') || p.has('liff.state')) {
+      window.location.replace('/liff/' + window.location.search + window.location.hash);
+    }
+  })();
+</script>
 <title>KVC Teacher Dashboard</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
@@ -254,6 +263,18 @@ const { useState, useEffect, useCallback, useRef, useMemo } = React;
 // ─── Config ───
 const API = 'https://kvc-attendance-bot.onrender.com';
 
+// ─── Safe fetch helper: ป้องกัน server ส่ง HTML กลับมาแทน JSON ───
+async function safeFetch(url, opts) {
+  const r = await fetch(url, opts);
+  const ct = r.headers.get('content-type') || '';
+  if (!ct.includes('application/json')) {
+    throw new Error('เซิร์ฟเวอร์ยังไม่พร้อม กรุณารอสักครู่แล้วลองใหม่');
+  }
+  const json = await r.json();
+  if (!r.ok) throw new Error(json.error || `HTTP ${r.status}`);
+  return json;
+}
+
 // ─── Toast System ───
 let toastId = 0;
 function ToastContainer({ toasts, removeToast }) {
@@ -286,9 +307,7 @@ function useApi(path) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await fetch(`${API}${path}`);
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const json = await r.json();
+      const json = await safeFetch(`${API}${path}`);
       setData(json.data || json);
       setError(null);
     } catch (e) { setError(e.message); }
@@ -597,6 +616,8 @@ function StudentsTab({ addToast }) {
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState('');
   const [approvingId, setApprovingId] = useState(null);
+  const [viewMode, setViewMode] = useState('list'); // list | grouped
+  const { data: sectionData, loading: sectionLoading, reload: reloadSections } = useApi('/api/students/by-section');
 
   const defaultForm = { student_id:'', title:'นาย', first_name:'', last_name:'', level:'ปวช.', year:'1', section:'', department:'', line_user_id:'' };
 
@@ -737,37 +758,87 @@ function StudentsTab({ addToast }) {
         <div className="card-header">
           <h2>🎓 รายชื่อนักเรียน</h2>
           <div className="filter-bar">
+            <button className={"btn " + (viewMode==='list' ? 'btn-primary' : 'btn-secondary')} onClick={() => setViewMode('list')}>📋 รายชื่อ</button>
+            <button className={"btn " + (viewMode==='grouped' ? 'btn-primary' : 'btn-secondary')} onClick={() => setViewMode('grouped')}>🏫 จัดกลุ่มตามห้อง</button>
             <input placeholder="🔍 ค้นหารหัส/ชื่อ..." value={search} onChange={e => setSearch(e.target.value)} />
             <button className="btn btn-primary" onClick={openAdd}>+ เพิ่มนักเรียน</button>
           </div>
         </div>
         <div className="card-body">
-          {loading ? <Loading /> : filtered.length === 0 ? <Empty /> : (
-            <div className="table-wrap">
-              <table>
-                <thead><tr><th>#</th><th>รหัส</th><th>ชื่อ-สกุล</th><th>ระดับ</th><th>ชั้นปี</th><th>กลุ่ม</th><th>สาขา</th><th>LINE</th><th>จัดการ</th></tr></thead>
-                <tbody>
-                  {filtered.map((s, i) => (
-                    <tr key={s._id || s.id || i}>
-                      <td>{i+1}</td>
-                      <td style={{fontFamily:'var(--mono)'}}><strong>{getSid(s)}</strong></td>
-                      <td>{getName(s)}</td>
-                      <td>{f(s,'level','grade') || '-'}</td>
-                      <td>{f(s,'year') || '-'}</td>
-                      <td>{f(s,'section','classroom','class') || '-'}</td>
-                      <td>{f(s,'department') || '-'}</td>
-                      <td>{s.line_user_id ? <span className="badge badge-success">เชื่อมแล้ว</span> : <span className="badge badge-danger">ยังไม่เชื่อม</span>}</td>
-                      <td>
-                        <div className="btn-group">
-                          <button className="btn btn-sm btn-secondary" onClick={() => openEdit(s)}>✏️</button>
-                          <button className="btn btn-sm btn-danger" onClick={() => del(s._id || s.id)}>🗑</button>
+          {viewMode === 'list' ? (
+            loading ? <Loading /> : filtered.length === 0 ? <Empty /> : (
+              <div className="table-wrap">
+                <table>
+                  <thead><tr><th>#</th><th>รหัส</th><th>ชื่อ-สกุล</th><th>ระดับ</th><th>ชั้นปี</th><th>กลุ่ม</th><th>สาขา</th><th>LINE</th><th>จัดการ</th></tr></thead>
+                  <tbody>
+                    {filtered.map((s, i) => (
+                      <tr key={s._id || s.id || i}>
+                        <td>{i+1}</td>
+                        <td style={{fontFamily:'var(--mono)'}}><strong>{getSid(s)}</strong></td>
+                        <td>{getName(s)}</td>
+                        <td>{f(s,'level','grade') || '-'}</td>
+                        <td>{f(s,'year') || '-'}</td>
+                        <td>{f(s,'section','classroom','class') || '-'}</td>
+                        <td>{f(s,'department') || '-'}</td>
+                        <td>{s.line_user_id ? <span className="badge badge-success">เชื่อมแล้ว</span> : <span className="badge badge-danger">ยังไม่เชื่อม</span>}</td>
+                        <td>
+                          <div className="btn-group">
+                            <button className="btn btn-sm btn-secondary" onClick={() => openEdit(s)}>✏️</button>
+                            <button className="btn btn-sm btn-danger" onClick={() => del(s._id || s.id)}>🗑</button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )
+          ) : (
+            sectionLoading ? <Loading /> : (
+              <div>
+                {(Array.isArray(sectionData) ? sectionData : []).map(sec => (
+                  <div key={sec.section} style={{marginBottom:20}}>
+                    <div style={{background:'var(--surface2)',padding:'10px 16px',borderRadius:'var(--radius)',marginBottom:8,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                      <div>
+                        <strong style={{fontSize:15}}>🏫 {sec.section}</strong>
+                        <span style={{marginLeft:12,fontSize:12,color:'var(--text2)'}}>{sec.students.length} คน</span>
+                      </div>
+                      {sec.subjects.length > 0 && (
+                        <div style={{fontSize:11,color:'var(--text2)'}}>
+                          วิชา: {sec.subjects.map(s => s.subject_code).join(', ')}
                         </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                      )}
+                    </div>
+                    {sec.subjects.length > 0 && (
+                      <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:8,paddingLeft:8}}>
+                        {sec.subjects.map(sub => (
+                          <span key={sub.subject_code} className="badge badge-info" style={{fontSize:11}}>
+                            📚 {sub.subject_code} {sub.subject_name} | ครู{sub.teacher_name||'-'}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    <div className="table-wrap">
+                      <table style={{fontSize:12}}>
+                        <thead><tr><th>#</th><th>รหัส</th><th>ชื่อ-สกุล</th><th>สาขา</th><th>LINE</th><th>จัดการ</th></tr></thead>
+                        <tbody>
+                          {sec.students.map((s, i) => (
+                            <tr key={s.id}>
+                              <td>{i+1}</td>
+                              <td style={{fontFamily:'var(--mono)'}}>{s.student_code}</td>
+                              <td>{s.name || `${s.prefix||''}${s.first_name||''} ${s.last_name||''}`.trim()}</td>
+                              <td>{s.major||'-'}</td>
+                              <td>{s.line_user_id ? <span className="badge badge-success" style={{fontSize:10}}>เชื่อมแล้ว</span> : <span className="badge badge-danger" style={{fontSize:10}}>-</span>}</td>
+                              <td><button className="btn btn-sm btn-secondary" onClick={() => openEdit(s)}>✏️</button></td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
           )}
         </div>
       </div>
@@ -795,6 +866,63 @@ function StudentsTab({ addToast }) {
 // ═══════════════════════════════════════════
 // TAB 3: เช็คชื่อ — FIX: เพิ่มลาป่วย/ลากิจ
 // ═══════════════════════════════════════════
+function GroupedAttendance({ items }) {
+  const STATUS_BADGE = {
+    present:'badge-success', absent:'badge-danger', late:'badge-warning',
+    sick_leave:'badge-sick', personal_leave:'badge-personal',
+    sick:'badge-sick', personal:'badge-personal'
+  };
+  const STATUS_LABEL = {
+    present:'มาเรียน', absent:'ขาด', late:'สาย', sick_leave:'ลาป่วย', personal_leave:'ลากิจ',
+    sick:'ลาป่วย', personal:'ลากิจ'
+  };
+
+  // จัดกลุ่มตาม section
+  const groups = {};
+  items.forEach(a => {
+    const sec = a.section || a.group_name || 'ไม่ระบุห้อง';
+    if (!groups[sec]) groups[sec] = { subjects: new Set(), items: [] };
+    groups[sec].items.push(a);
+    if (a.subject) groups[sec].subjects.add(a.subject);
+  });
+
+  return (
+    <div>
+      {Object.entries(groups).map(([section, group]) => (
+        <div key={section} style={{marginBottom:20}}>
+          <div style={{background:'var(--surface2)',padding:'10px 16px',borderRadius:'var(--radius)',marginBottom:8,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <div>
+              <strong style={{fontSize:14}}>🏫 {section}</strong>
+              <span style={{fontSize:12,color:'var(--text2)',marginLeft:12}}>
+                วิชา: {[...group.subjects].join(', ') || '-'}
+              </span>
+            </div>
+            <span style={{fontSize:12,color:'var(--text2)'}}>{group.items.length} คน</span>
+          </div>
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>#</th><th>รหัส</th><th>ชื่อ-สกุล</th><th>วิชา</th><th>สถานะ</th><th>เวลาเข้า</th><th>เวลาออก</th></tr></thead>
+              <tbody>
+                {group.items.map((a, i) => (
+                  <tr key={a.id || i}>
+                    <td>{i+1}</td>
+                    <td style={{fontFamily:'var(--mono)',fontSize:11}}>{a.studentId || '-'}</td>
+                    <td>{a.name || '-'}</td>
+                    <td style={{fontSize:11}}>{a.subject || '-'}</td>
+                    <td><span className={"badge " + (STATUS_BADGE[a.status] || 'badge-info')}>{STATUS_LABEL[a.status] || a.status}</span></td>
+                    <td style={{fontFamily:'var(--mono)'}}>{a.time || '-'}</td>
+                    <td style={{fontFamily:'var(--mono)',color:!a.checkOutTime?'var(--text3)':''}}>{a.checkOutTime || '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function AttendanceTab({ addToast }) {
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [data, setData] = useState(null);
@@ -803,8 +931,7 @@ function AttendanceTab({ addToast }) {
   const fetchAtt = async () => {
     setLoading(true);
     try {
-      const r = await fetch(`${API}/api/attendance?date=${date}`);
-      const json = await r.json();
+      const json = await safeFetch(`${API}/api/attendance?date=${date}`);
       setData(json.data || json);
     } catch (e) { addToast(e.message, 'error'); }
     setLoading(false);
@@ -827,12 +954,23 @@ function AttendanceTab({ addToast }) {
   // ─── Edit status ───
   const [editingId, setEditingId] = useState(null);
 
+  const [filterSubject, setFilterSubject] = useState('');
+  const [filterSection, setFilterSection] = useState('');
+  const [groupBySection, setGroupBySection] = useState(false);
+
   const items = Array.isArray(data) ? data : [];
-  const present = items.filter(a => a.status === 'present' || a.status === 'มาเรียน').length;
-  const absent = items.filter(a => a.status === 'absent' || a.status === 'ขาด').length;
-  const late = items.filter(a => a.status === 'late' || a.status === 'สาย').length;
-  const sick = items.filter(a => a.status === 'sick_leave' || a.status === 'sick' || a.status === 'ลาป่วย').length;
-  const personal = items.filter(a => a.status === 'personal_leave' || a.status === 'personal' || a.status === 'ลากิจ').length;
+  const subjectOptions = [...new Set(items.map(a => a.subject).filter(Boolean))].sort();
+  const sectionOptions = [...new Set(items.map(a => a.section).filter(Boolean))].sort();
+  const filteredItems = items.filter(a =>
+    (!filterSubject || a.subject === filterSubject) &&
+    (!filterSection || a.section === filterSection)
+  );
+
+  const present = filteredItems.filter(a => a.status === 'present' || a.status === 'มาเรียน').length;
+  const absent = filteredItems.filter(a => a.status === 'absent' || a.status === 'ขาด').length;
+  const late = filteredItems.filter(a => a.status === 'late' || a.status === 'สาย').length;
+  const sick = filteredItems.filter(a => a.status === 'sick_leave' || a.status === 'sick' || a.status === 'ลาป่วย').length;
+  const personal = filteredItems.filter(a => a.status === 'personal_leave' || a.status === 'personal' || a.status === 'ลากิจ').length;
 
   const statusMap = {
     present:'มาเรียน', absent:'ขาด', late:'สาย', sick_leave:'ลาป่วย', personal_leave:'ลากิจ',
@@ -909,8 +1047,19 @@ function AttendanceTab({ addToast }) {
           <h2>📋 สถานะเช็คชื่อ</h2>
           <div className="filter-bar">
             <input type="date" value={date} onChange={e => setDate(e.target.value)} />
+            <select value={filterSubject} onChange={e => setFilterSubject(e.target.value)} style={{padding:'6px 10px',borderRadius:6,border:'1px solid var(--border)'}}>
+              <option value="">-- ทุกวิชา --</option>
+              {subjectOptions.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+            <select value={filterSection} onChange={e => setFilterSection(e.target.value)} style={{padding:'6px 10px',borderRadius:6,border:'1px solid var(--border)'}}>
+              <option value="">-- ทุกห้อง --</option>
+              {sectionOptions.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
             <button className="btn btn-secondary" onClick={fetchAtt}>🔄 รีเฟรช</button>
             <button className="btn btn-primary" onClick={() => setManualModal(true)}>📝 บันทึกลา/ขาด</button>
+            <button className={"btn " + (groupBySection ? "btn-primary" : "btn-secondary")} onClick={() => setGroupBySection(p => !p)}>
+              {groupBySection ? "📚 จัดกลุ่มอยู่" : "📚 จัดกลุ่มตามห้อง"}
+            </button>
           </div>
         </div>
         {/* Legend */}
@@ -922,12 +1071,14 @@ function AttendanceTab({ addToast }) {
           <span className="badge badge-personal">● ลากิจ</span>
         </div>
         <div className="card-body">
-          {loading ? <Loading /> : items.length === 0 ? <Empty msg="ไม่มีข้อมูลเช็คชื่อวันนี้" /> : (
+          {loading ? <Loading /> : filteredItems.length === 0 ? <Empty msg="ไม่มีข้อมูลเช็คชื่อวันนี้" /> : groupBySection ? (
+            <GroupedAttendance items={filteredItems} />
+          ) : (
             <div className="table-wrap">
               <table>
                 <thead><tr><th>#</th><th>รหัส</th><th>ชื่อ-สกุล</th><th>วิชา</th><th>สถานะ</th><th>เวลาเข้า</th><th>เวลาออก</th><th>หมายเหตุ</th><th>จัดการ</th></tr></thead>
                 <tbody>
-                  {items.map((a, i) => (
+                  {filteredItems.map((a, i) => (
                     <tr key={a.id || a._id || i}>
                       <td>{i+1}</td>
                       <td style={{fontFamily:'var(--mono)'}}>{a.studentId || a.student_id || '-'}</td>
@@ -1423,7 +1574,105 @@ function FaceRegTab({ addToast }) {
 // ═══════════════════════════════════════════
 // TAB 7: รายงาน — ดูข้อมูล + Export Excel
 // ═══════════════════════════════════════════
+function AbsenceRateResult({ data }) {
+  const absentees = data.students.filter(s => s.absentCount > 0);
+  return (
+    <div>
+      <div className="card" style={{marginBottom:14}}>
+        <div className="card-header">
+          <h2 style={{fontSize:15}}>📉 {data.subjectCode} {data.subjectName}</h2>
+          <div style={{fontSize:12,color:'var(--text2)'}}>เวลาเรียนทั้งภาค: {data.totalHours} ชม. ({data.weeks} สัปดาห์)</div>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead><tr>
+              <th>#</th><th>รหัส</th><th>คำนำหน้า</th><th>ชื่อ</th><th>สกุล</th>
+              <th>ขาด (ครั้ง)</th><th>ขาด (ชม.)</th><th>ร้อยละเวลาเรียน</th><th>สถานะ</th>
+            </tr></thead>
+            <tbody>
+              {data.students.map((s, i) => (
+                <tr key={i} style={{background: !s.pass ? 'rgba(239,68,68,0.05)' : ''}}>
+                  <td>{i+1}</td>
+                  <td style={{fontFamily:'var(--mono)'}}>{s.studentCode}</td>
+                  <td>{s.prefix}</td>
+                  <td>{s.firstName}</td>
+                  <td>{s.lastName}</td>
+                  <td style={{textAlign:'center'}}>{s.absentCount}</td>
+                  <td style={{textAlign:'center'}}>{s.absentHours}</td>
+                  <td style={{textAlign:'center',fontWeight:700,color:s.pass?'var(--success)':'var(--danger)'}}>{s.attendancePercent}%</td>
+                  <td><span className={"badge " + (s.pass ? "badge-success" : "badge-danger")}>{s.pass ? "ผ่าน" : "ไม่ผ่าน"}</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {absentees.length > 0 && (
+        <div className="card">
+          <div className="card-header"><h2>📋 รายงานแจ้ง ขร. ({absentees.length} คน)</h2></div>
+          <div className="table-wrap">
+            <table>
+              <thead><tr>
+                <th>#</th><th>รหัสนักเรียน</th><th>คำนำหน้า</th><th>ชื่อ</th><th>สกุล</th>
+                <th>จำนวนครั้งที่ขาด</th><th>จำนวนชั่วโมงที่ขาด</th>
+              </tr></thead>
+              <tbody>
+                {absentees.map((s, i) => (
+                  <tr key={i}>
+                    <td>{i+1}</td>
+                    <td style={{fontFamily:'var(--mono)'}}>{s.studentCode}</td>
+                    <td>{s.prefix}</td>
+                    <td>{s.firstName}</td>
+                    <td>{s.lastName}</td>
+                    <td style={{textAlign:'center',fontWeight:700,color:'var(--danger)'}}>{s.absentCount} ครั้ง</td>
+                    <td style={{textAlign:'center',fontWeight:700,color:'var(--danger)'}}>{s.absentHours} ชม.</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CheckinLogResult({ data }) {
+  const STATUS_COLOR = { present:'var(--success)', late:'var(--warning)', absent:'var(--danger)', sick_leave:'var(--sick)', personal_leave:'var(--personal)' };
+  const STATUS_LABEL = { present:'มาเรียน', late:'สาย', absent:'ขาด', sick_leave:'ลาป่วย', personal_leave:'ลากิจ' };
+  return (
+    <div className="card">
+      <div className="card-header"><h2 style={{fontSize:15}}>🕐 {data.subjectCode} {data.subjectName} — {data.rows.length} รายการ</h2></div>
+      <div className="table-wrap">
+        <table>
+          <thead><tr>
+            <th>#</th><th>วันที่</th><th>รหัส</th><th>ชื่อ-สกุล</th><th>สถานะ</th>
+            <th>เวลาเข้า</th><th>เวลาออก</th><th>เวลาเรียนจริง</th><th>Face</th><th>หมายเหตุ</th>
+          </tr></thead>
+          <tbody>
+            {data.rows.map((r, i) => (
+              <tr key={i}>
+                <td>{i+1}</td>
+                <td style={{fontSize:11}}>{r.date}</td>
+                <td style={{fontFamily:'var(--mono)',fontSize:11}}>{r.studentCode}</td>
+                <td style={{fontSize:12}}>{r.name}</td>
+                <td><span className="badge" style={{background:(STATUS_COLOR[r.status]||'#999')+'22',color:STATUS_COLOR[r.status]||'#999',fontSize:10}}>{STATUS_LABEL[r.status]||r.status}</span></td>
+                <td style={{fontFamily:'var(--mono)'}}>{r.checkIn}</td>
+                <td style={{fontFamily:'var(--mono)',color:r.checkOut==='-'?'var(--text3)':''}}>{r.checkOut}</td>
+                <td style={{fontSize:11}}>{r.duration}</td>
+                <td style={{fontSize:11}}>{r.faceConfidence}</td>
+                <td style={{fontSize:11,color:'var(--text2)'}}>{r.remark}{r.isManual ? ' [ครูบันทึก]' : ''}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function ReportsTab({ addToast }) {
+  const [activeReport, setActiveReport] = useState('semester');
   const [filters, setFilters] = useState({ subjects: [], sections: [], semesters: [] });
   const [subjectId, setSubjectId] = useState('');
   const [section, setSection] = useState('');
@@ -1434,14 +1683,24 @@ function ReportsTab({ addToast }) {
   const [filtersLoaded, setFiltersLoaded] = useState(false);
   const [report, setReport] = useState(null);
 
+  const [arSubjectId, setArSubjectId] = useState('');
+  const [arSection, setArSection] = useState('');
+  const [arLoading, setArLoading] = useState(false);
+  const [arData, setArData] = useState(null);
+
+  const [logSubjectId, setLogSubjectId] = useState('');
+  const [logDateFrom, setLogDateFrom] = useState('');
+  const [logDateTo, setLogDateTo] = useState('');
+  const [logLoading, setLogLoading] = useState(false);
+  const [logData, setLogData] = useState(null);
+
   useEffect(() => {
-    fetch(`${API}/api/report/filters`)
-      .then(r => r.json())
+    safeFetch(`${API}/api/report/filters`)
       .then(data => {
         setFilters({ subjects: data.subjects || [], sections: data.sections || [], semesters: data.semesters || [] });
         setFiltersLoaded(true);
       })
-      .catch(err => addToast('โหลดตัวกรองไม่สำเร็จ', 'error'));
+      .catch(err => addToast('โหลดตัวกรองไม่สำเร็จ: ' + err.message, 'error'));
   }, []);
 
   const fetchPreview = async () => {
@@ -1456,9 +1715,7 @@ function ReportsTab({ addToast }) {
         params.set('semester', filters.semesters[0].semester);
         params.set('academic_year', filters.semesters[0].academic_year);
       }
-      const r = await fetch(`${API}/api/report/preview?${params}`);
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.error || 'เกิดข้อผิดพลาด');
+      const data = await safeFetch(`${API}/api/report/preview?${params}`);
       setReport(data);
     } catch (e) { addToast(e.message, 'error'); }
     setLoading(false);
@@ -1489,6 +1746,31 @@ function ReportsTab({ addToast }) {
     setExporting(false);
   };
 
+  const fetchAbsenceRate = async () => {
+    if (!arSubjectId) { addToast('กรุณาเลือกรายวิชา', 'error'); return; }
+    setArLoading(true);
+    try {
+      const params = new URLSearchParams({ subject_id: arSubjectId });
+      if (arSection) params.set('section', arSection);
+      const data = await safeFetch(`${API}/api/report/absence-rate?${params}`);
+      setArData(data);
+    } catch (e) { addToast(e.message, 'error'); }
+    setArLoading(false);
+  };
+
+  const fetchLog = async () => {
+    if (!logSubjectId) { addToast('กรุณาเลือกรายวิชา', 'error'); return; }
+    setLogLoading(true);
+    try {
+      const params = new URLSearchParams({ subject_id: logSubjectId });
+      if (logDateFrom) params.set('date_from', logDateFrom);
+      if (logDateTo) params.set('date_to', logDateTo);
+      const data = await safeFetch(`${API}/api/report/checkin-log?${params}`);
+      setLogData(data);
+    } catch (e) { addToast(e.message, 'error'); }
+    setLogLoading(false);
+  };
+
   const statusColor = (s) => {
     if (!s) return 'var(--text3)';
     if (s === 'present') return 'var(--success)';
@@ -1499,105 +1781,181 @@ function ReportsTab({ addToast }) {
     return 'var(--text3)';
   };
 
+  const REPORT_TABS = [
+    { id: 'semester', label: '📊 รายงานผลเวลาเรียน' },
+    { id: 'absence', label: '📉 ร้อยละขาดเรียน + ขร.' },
+    { id: 'log', label: '🕐 บันทึกเวลาเข้า-ออก' },
+  ];
+
   return (
     <div>
-      <div className="card" style={{marginBottom:14}}>
-        <div className="card-header"><h2>📊 รายงานผลเวลาเรียน</h2></div>
-        <div className="card-body">
-          <p style={{fontSize:13,color:'var(--text2)',marginBottom:18}}>
-            เลือกรายวิชาและกลุ่มเรียน → กด "ดึงข้อมูล" เพื่อดูตาราง → กด "Export Excel" เพื่อดาวน์โหลดตามรูปแบบ RMS
-          </p>
-          {!filtersLoaded ? <Loading /> : (
-            <div>
-              <div className="form-grid" style={{maxWidth:700,marginBottom:18}}>
+      <div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap'}}>
+        {REPORT_TABS.map(t => (
+          <button key={t.id} onClick={() => setActiveReport(t.id)}
+            style={{padding:'8px 16px',borderRadius:8,border:'2px solid',cursor:'pointer',fontWeight:600,fontSize:13,
+              borderColor: activeReport===t.id ? 'var(--primary)' : 'var(--border)',
+              background: activeReport===t.id ? 'var(--primary)' : 'var(--surface)',
+              color: activeReport===t.id ? '#fff' : 'var(--text)'}}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {activeReport === 'semester' && (
+        <div>
+          <div className="card" style={{marginBottom:14}}>
+            <div className="card-header"><h2>📊 รายงานผลเวลาเรียน</h2></div>
+            <div className="card-body">
+              <p style={{fontSize:13,color:'var(--text2)',marginBottom:18}}>
+                เลือกรายวิชาและกลุ่มเรียน → กด "ดึงข้อมูล" เพื่อดูตาราง → กด "Export Excel" เพื่อดาวน์โหลดตามรูปแบบ RMS
+              </p>
+              {!filtersLoaded ? <Loading /> : (
+                <div>
+                  <div className="form-grid" style={{maxWidth:700,marginBottom:18}}>
+                    <div className="form-group">
+                      <label>รายวิชา *</label>
+                      <select value={subjectId} onChange={e => { setSubjectId(e.target.value); setReport(null); }}>
+                        <option value="">-- เลือกรายวิชา --</option>
+                        {filters.subjects.map(s => <option key={s.id} value={s.id}>{s.subject_code} {s.subject_name}</option>)}
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label>กลุ่มเรียน</label>
+                      <select value={section} onChange={e => { setSection(e.target.value); setReport(null); }}>
+                        <option value="">-- ทุกกลุ่ม --</option>
+                        {filters.sections.map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    </div>
+                    <div className="form-group"><label>ตั้งแต่วันที่</label><input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} /></div>
+                    <div className="form-group"><label>ถึงวันที่</label><input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} /></div>
+                  </div>
+                  <div className="btn-group">
+                    <button className="btn btn-primary" onClick={fetchPreview} disabled={loading || !subjectId}>
+                      {loading ? '⏳ กำลังโหลด...' : '📊 ดึงข้อมูล'}
+                    </button>
+                    {report && (
+                      <button className="btn btn-secondary" onClick={exportExcel} disabled={exporting}>
+                        {exporting ? '⏳ กำลังสร้างไฟล์...' : '📥 Export Excel'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+          {loading && <Loading />}
+          {!loading && report && (
+            <div className="card">
+              <div className="card-header" style={{flexWrap:'wrap',gap:8}}>
+                <div>
+                  <h2 style={{fontSize:15}}>📋 {report.subjectCode} {report.subjectName}</h2>
+                  <div style={{fontSize:12,color:'var(--text2)',marginTop:4}}>
+                    กลุ่ม: {report.section} | ครูผู้สอน: {report.teacherName} | นักเรียน {report.students.length} คน | {report.columns.length} คอลัมน์
+                  </div>
+                </div>
+              </div>
+              <div style={{padding:0,overflowX:'auto'}}>
+                <table style={{fontSize:11,minWidth:'100%'}}>
+                  <thead>
+                    <tr>
+                      <th style={{position:'sticky',left:0,background:'var(--surface2)',zIndex:3,minWidth:30,textAlign:'center'}}>#</th>
+                      <th style={{position:'sticky',left:30,background:'var(--surface2)',zIndex:3,minWidth:90,textAlign:'center'}}>รหัส</th>
+                      <th style={{position:'sticky',left:120,background:'var(--surface2)',zIndex:3,minWidth:110}}>ชื่อ</th>
+                      <th style={{position:'sticky',left:230,background:'var(--surface2)',zIndex:3,minWidth:90}}>สกุล</th>
+                      {report.columns.map((col, ci) => (
+                        <th key={ci} style={{textAlign:'center',minWidth:28,padding:'6px 2px',fontSize:8,lineHeight:1.2,whiteSpace:'nowrap',writingMode:'vertical-lr',height:90}}>
+                          {col.header}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {report.students.map((st, si) => (
+                      <tr key={si}>
+                        <td style={{position:'sticky',left:0,background:'var(--surface)',zIndex:1,textAlign:'center',fontSize:10}}>{st.no}</td>
+                        <td style={{position:'sticky',left:30,background:'var(--surface)',zIndex:1,fontFamily:'var(--mono)',fontSize:10,textAlign:'center'}}>{st.studentCode}</td>
+                        <td style={{position:'sticky',left:120,background:'var(--surface)',zIndex:1,fontSize:11,fontWeight:500,whiteSpace:'nowrap'}}>{st.firstName}</td>
+                        <td style={{position:'sticky',left:230,background:'var(--surface)',zIndex:1,fontSize:11,whiteSpace:'nowrap'}}>{st.lastName}</td>
+                        {st.statuses.map((s, ci) => (
+                          <td key={ci} style={{textAlign:'center',fontWeight:600,fontSize:12,padding:'4px 2px',color:statusColor(s.status)}}>
+                            {s.symbol}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+          {!loading && !report && (
+            <div style={{marginTop:14,padding:'14px 18px',background:'var(--surface)',border:'1px solid var(--border)',borderRadius:'var(--radius)',fontSize:12,color:'var(--text2)'}}>
+              <div><strong>อักษรย่อ:</strong>&nbsp;
+                <strong style={{color:'var(--success)'}}>/</strong> = มาเรียน&nbsp;&nbsp;
+                <strong style={{color:'var(--warning)'}}>ส.</strong> = สาย&nbsp;&nbsp;
+                <strong style={{color:'var(--danger)'}}>ข.</strong> = ขาด&nbsp;&nbsp;
+                <strong style={{color:'var(--sick)'}}>ป.</strong> = ลาป่วย&nbsp;&nbsp;
+                <strong style={{color:'var(--personal)'}}>ก.</strong> = ลากิจ
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeReport === 'absence' && (
+        <div>
+          <div className="card" style={{marginBottom:14}}>
+            <div className="card-header"><h2>📉 รายงานร้อยละขาดเรียน & แจ้ง ขร.</h2></div>
+            <div className="card-body">
+              <div className="form-grid" style={{maxWidth:500,marginBottom:18}}>
                 <div className="form-group">
                   <label>รายวิชา *</label>
-                  <select value={subjectId} onChange={e => { setSubjectId(e.target.value); setReport(null); }}>
+                  <select value={arSubjectId} onChange={e => { setArSubjectId(e.target.value); setArData(null); }}>
                     <option value="">-- เลือกรายวิชา --</option>
                     {filters.subjects.map(s => <option key={s.id} value={s.id}>{s.subject_code} {s.subject_name}</option>)}
                   </select>
                 </div>
                 <div className="form-group">
                   <label>กลุ่มเรียน</label>
-                  <select value={section} onChange={e => { setSection(e.target.value); setReport(null); }}>
+                  <select value={arSection} onChange={e => { setArSection(e.target.value); setArData(null); }}>
                     <option value="">-- ทุกกลุ่ม --</option>
                     {filters.sections.map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </div>
-                <div className="form-group"><label>ตั้งแต่วันที่</label><input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} /></div>
-                <div className="form-group"><label>ถึงวันที่</label><input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} /></div>
               </div>
-              <div className="btn-group">
-                <button className="btn btn-primary" onClick={fetchPreview} disabled={loading || !subjectId}>
-                  {loading ? '⏳ กำลังโหลด...' : '📊 ดึงข้อมูล'}
-                </button>
-                {report && (
-                  <button className="btn btn-secondary" onClick={exportExcel} disabled={exporting}>
-                    {exporting ? '⏳ กำลังสร้างไฟล์...' : '📥 Export Excel'}
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {loading && <Loading />}
-
-      {!loading && report && (
-        <div className="card">
-          <div className="card-header" style={{flexWrap:'wrap',gap:8}}>
-            <div>
-              <h2 style={{fontSize:15}}>📋 {report.subjectCode} {report.subjectName}</h2>
-              <div style={{fontSize:12,color:'var(--text2)',marginTop:4}}>
-                กลุ่ม: {report.section} | ครูผู้สอน: {report.teacherName} | นักเรียน {report.students.length} คน | {report.columns.length} คอลัมน์
-              </div>
+              <button className="btn btn-primary" onClick={fetchAbsenceRate} disabled={arLoading || !arSubjectId}>
+                {arLoading ? '⏳ กำลังโหลด...' : '📊 ดึงข้อมูล'}
+              </button>
             </div>
           </div>
-          <div style={{padding:0,overflowX:'auto'}}>
-            <table style={{fontSize:11,minWidth:'100%'}}>
-              <thead>
-                <tr>
-                  <th style={{position:'sticky',left:0,background:'var(--surface2)',zIndex:3,minWidth:30,textAlign:'center'}}>#</th>
-                  <th style={{position:'sticky',left:30,background:'var(--surface2)',zIndex:3,minWidth:90,textAlign:'center'}}>รหัส</th>
-                  <th style={{position:'sticky',left:120,background:'var(--surface2)',zIndex:3,minWidth:110}}>ชื่อ</th>
-                  <th style={{position:'sticky',left:230,background:'var(--surface2)',zIndex:3,minWidth:90}}>สกุล</th>
-                  {report.columns.map((col, ci) => (
-                    <th key={ci} style={{textAlign:'center',minWidth:28,padding:'6px 2px',fontSize:8,lineHeight:1.2,whiteSpace:'nowrap',writingMode:'vertical-lr',height:90}}>
-                      {col.header}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {report.students.map((st, si) => (
-                  <tr key={si}>
-                    <td style={{position:'sticky',left:0,background:'var(--surface)',zIndex:1,textAlign:'center',fontSize:10}}>{st.no}</td>
-                    <td style={{position:'sticky',left:30,background:'var(--surface)',zIndex:1,fontFamily:'var(--mono)',fontSize:10,textAlign:'center'}}>{st.studentCode}</td>
-                    <td style={{position:'sticky',left:120,background:'var(--surface)',zIndex:1,fontSize:11,fontWeight:500,whiteSpace:'nowrap'}}>{st.firstName}</td>
-                    <td style={{position:'sticky',left:230,background:'var(--surface)',zIndex:1,fontSize:11,whiteSpace:'nowrap'}}>{st.lastName}</td>
-                    {st.statuses.map((s, ci) => (
-                      <td key={ci} style={{textAlign:'center',fontWeight:600,fontSize:12,padding:'4px 2px',color:statusColor(s.status)}}>
-                        {s.symbol}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          {arLoading && <Loading />}
+          {!arLoading && arData && <AbsenceRateResult data={arData} />}
         </div>
       )}
 
-      {!loading && !report && (
-        <div style={{marginTop:14,padding:'14px 18px',background:'var(--surface)',border:'1px solid var(--border)',borderRadius:'var(--radius)',fontSize:12,color:'var(--text2)'}}>
-          <div><strong>อักษรย่อ:</strong>&nbsp;
-            <strong style={{color:'var(--success)'}}>/</strong> = มาเรียน&nbsp;&nbsp;
-            <strong style={{color:'var(--warning)'}}>ส.</strong> = สาย&nbsp;&nbsp;
-            <strong style={{color:'var(--danger)'}}>ข.</strong> = ขาด&nbsp;&nbsp;
-            <strong style={{color:'var(--sick)'}}>ป.</strong> = ลาป่วย&nbsp;&nbsp;
-            <strong style={{color:'var(--personal)'}}>ก.</strong> = ลากิจ
+      {activeReport === 'log' && (
+        <div>
+          <div className="card" style={{marginBottom:14}}>
+            <div className="card-header"><h2>🕐 บันทึกเวลาเช็คชื่อเข้า-ออก</h2></div>
+            <div className="card-body">
+              <div className="form-grid" style={{maxWidth:700,marginBottom:18}}>
+                <div className="form-group">
+                  <label>รายวิชา *</label>
+                  <select value={logSubjectId} onChange={e => { setLogSubjectId(e.target.value); setLogData(null); }}>
+                    <option value="">-- เลือกรายวิชา --</option>
+                    {filters.subjects.map(s => <option key={s.id} value={s.id}>{s.subject_code} {s.subject_name}</option>)}
+                  </select>
+                </div>
+                <div className="form-group"><label>ตั้งแต่วันที่</label><input type="date" value={logDateFrom} onChange={e => setLogDateFrom(e.target.value)} /></div>
+                <div className="form-group"><label>ถึงวันที่</label><input type="date" value={logDateTo} onChange={e => setLogDateTo(e.target.value)} /></div>
+              </div>
+              <button className="btn btn-primary" onClick={fetchLog} disabled={logLoading || !logSubjectId}>
+                {logLoading ? '⏳ กำลังโหลด...' : '🔍 ค้นหา'}
+              </button>
+            </div>
           </div>
+          {logLoading && <Loading />}
+          {!logLoading && logData && <CheckinLogResult data={logData} />}
         </div>
       )}
     </div>
@@ -1695,21 +2053,322 @@ function LineGroupsTab({ addToast }) {
   );
 }
 
+// ═══════════════════════════════════════════
+// TAB: แผนกวิชา
+// ═══════════════════════════════════════════
+function DepartmentsTab({ addToast }) {
+  const { data, loading, reload } = useApi('/api/departments');
+  const [form, setForm] = useState({ name: '', short_name: '' });
+  const [editId, setEditId] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const depts = Array.isArray(data) ? data : [];
+
+  const save = async () => {
+    if (!form.name.trim()) { addToast('กรุณาระบุชื่อแผนก', 'error'); return; }
+    setSaving(true);
+    try {
+      const url = editId ? `${API}/api/departments/${editId}` : `${API}/api/departments`;
+      const method = editId ? 'PUT' : 'POST';
+      const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
+      const json = await r.json();
+      if (!r.ok) throw new Error(json.error);
+      addToast(editId ? 'แก้ไขแผนกแล้ว' : 'เพิ่มแผนกแล้ว');
+      setForm({ name: '', short_name: '' }); setEditId(null); reload();
+    } catch (e) { addToast(e.message, 'error'); }
+    setSaving(false);
+  };
+
+  const del = async (id, name) => {
+    if (!confirm(`ลบแผนก "${name}" ใช่ไหม?`)) return;
+    try {
+      await fetch(`${API}/api/departments/${id}`, { method: 'DELETE' });
+      addToast('ลบแผนกแล้ว'); reload();
+    } catch (e) { addToast(e.message, 'error'); }
+  };
+
+  return (
+    <div>
+      <div className="card" style={{marginBottom:14}}>
+        <div className="card-header"><h2>🏛️ {editId ? 'แก้ไขแผนกวิชา' : 'เพิ่มแผนกวิชา'}</h2></div>
+        <div className="card-body">
+          <div className="form-grid" style={{maxWidth:500,marginBottom:14}}>
+            <div className="form-group">
+              <label>ชื่อแผนกวิชา *</label>
+              <input placeholder="เช่น การบัญชี, คอมพิวเตอร์ธุรกิจ" value={form.name} onChange={e => setForm({...form, name: e.target.value})} />
+            </div>
+            <div className="form-group">
+              <label>ชื่อย่อ</label>
+              <input placeholder="เช่น บช., คธ." value={form.short_name} onChange={e => setForm({...form, short_name: e.target.value})} />
+            </div>
+          </div>
+          <div className="btn-group">
+            <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? '⏳' : editId ? '💾 บันทึก' : '➕ เพิ่ม'}</button>
+            {editId && <button className="btn btn-secondary" onClick={() => { setEditId(null); setForm({ name: '', short_name: '' }); }}>ยกเลิก</button>}
+          </div>
+        </div>
+      </div>
+      <div className="card">
+        <div className="card-header"><h2>รายการแผนกวิชา ({depts.length} แผนก)</h2><button className="btn btn-secondary" onClick={reload}>รีเฟรช</button></div>
+        {loading ? <Loading /> : depts.length === 0 ? <Empty msg="ยังไม่มีแผนกวิชา" /> : (
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>#</th><th>ชื่อแผนกวิชา</th><th>ชื่อย่อ</th><th>จัดการ</th></tr></thead>
+              <tbody>
+                {depts.map((d, i) => (
+                  <tr key={d.id}>
+                    <td>{i+1}</td>
+                    <td style={{fontWeight:500}}>{d.name}</td>
+                    <td>{d.short_name || '-'}</td>
+                    <td>
+                      <div className="btn-group">
+                        <button className="btn btn-sm btn-primary" onClick={() => { setEditId(d.id); setForm({ name: d.name, short_name: d.short_name || '' }); }}>✏️ แก้ไข</button>
+                        <button className="btn btn-sm btn-danger" onClick={() => del(d.id, d.name)}>🗑️ ลบ</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════
+// TAB: วันหยุด
+// ═══════════════════════════════════════════
+function HolidaysTab({ addToast }) {
+  const currentYear = new Date().getFullYear();
+  const [year, setYear] = useState(String(currentYear));
+  const [holidays, setHolidays] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [form, setForm] = useState({ date: '', name: '' });
+  const [saving, setSaving] = useState(false);
+
+  const fetchHolidays = async () => {
+    setLoading(true);
+    try {
+      const json = await safeFetch(`${API}/api/holidays?year=${year}`);
+      setHolidays(Array.isArray(json) ? json : (json.data || []));
+    } catch (e) { addToast(e.message, 'error'); }
+    setLoading(false);
+  };
+
+  useEffect(() => { fetchHolidays(); }, [year]);
+
+  const save = async () => {
+    if (!form.date || !form.name.trim()) { addToast('กรุณาระบุวันที่และชื่อวันหยุด', 'error'); return; }
+    setSaving(true);
+    try {
+      await safeFetch(`${API}/api/holidays`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
+      addToast('บันทึกวันหยุดแล้ว');
+      setForm({ date: '', name: '' }); fetchHolidays();
+    } catch (e) { addToast(e.message, 'error'); }
+    setSaving(false);
+  };
+
+  const del = async (id, name) => {
+    if (!confirm(`ลบ "${name}" ใช่ไหม?`)) return;
+    try {
+      await safeFetch(`${API}/api/holidays/${id}`, { method: 'DELETE' });
+      addToast('ลบวันหยุดแล้ว'); fetchHolidays();
+    } catch (e) { addToast(e.message, 'error'); }
+  };
+
+  const thaiHolidays2569 = [
+    { date: '2026-01-01', name: 'วันขึ้นปีใหม่' },
+    { date: '2026-02-12', name: 'วันมาฆบูชา' },
+    { date: '2026-04-06', name: 'วันจักรี' },
+    { date: '2026-04-13', name: 'วันสงกรานต์' },
+    { date: '2026-04-14', name: 'วันสงกรานต์' },
+    { date: '2026-04-15', name: 'วันสงกรานต์' },
+    { date: '2026-05-01', name: 'วันแรงงาน' },
+    { date: '2026-05-04', name: 'วันฉัตรมงคล' },
+    { date: '2026-05-11', name: 'วันวิสาขบูชา' },
+    { date: '2026-06-03', name: 'วันเฉลิมพระชนมพรรษา ราชินี' },
+    { date: '2026-07-28', name: 'วันเฉลิมพระชนมพรรษา ร.10' },
+    { date: '2026-08-12', name: 'วันแม่แห่งชาติ' },
+    { date: '2026-10-13', name: 'วันคล้ายวันสวรรคต ร.9' },
+    { date: '2026-10-23', name: 'วันปิยมหาราช' },
+    { date: '2026-12-05', name: 'วันพ่อแห่งชาติ' },
+    { date: '2026-12-10', name: 'วันรัฐธรรมนูญ' },
+    { date: '2026-12-31', name: 'วันสิ้นปี' },
+  ];
+
+  const importDefaults = async () => {
+    if (!confirm('นำเข้าวันหยุดราชการปี 2569 ทั้งหมด?')) return;
+    try {
+      for (const h of thaiHolidays2569) {
+        await safeFetch(`${API}/api/holidays`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(h) });
+      }
+      addToast('นำเข้าวันหยุดแล้ว'); fetchHolidays();
+    } catch (e) { addToast(e.message, 'error'); }
+  };
+
+  return (
+    <div>
+      <div className="card" style={{marginBottom:14}}>
+        <div className="card-header"><h2>📅 เพิ่มวันหยุด</h2>
+          <button className="btn btn-secondary" onClick={importDefaults}>📥 นำเข้าวันหยุดราชการ 2569</button>
+        </div>
+        <div className="card-body">
+          <div className="form-grid" style={{maxWidth:500,marginBottom:14}}>
+            <div className="form-group"><label>วันที่ *</label><input type="date" value={form.date} onChange={e => setForm({...form, date: e.target.value})} /></div>
+            <div className="form-group"><label>ชื่อวันหยุด *</label><input placeholder="เช่น วันสงกรานต์" value={form.name} onChange={e => setForm({...form, name: e.target.value})} /></div>
+          </div>
+          <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? '⏳' : '➕ เพิ่มวันหยุด'}</button>
+        </div>
+      </div>
+      <div className="card">
+        <div className="card-header">
+          <h2>ปฏิทินวันหยุด</h2>
+          <div className="filter-bar">
+            <select value={year} onChange={e => setYear(e.target.value)} style={{padding:'6px 10px',borderRadius:6,border:'1px solid var(--border)'}}>
+              {[2025,2026,2027].map(y => <option key={y} value={y}>{y + 543}</option>)}
+            </select>
+          </div>
+        </div>
+        {loading ? <Loading /> : holidays.length === 0 ? <Empty msg="ไม่มีวันหยุดในปีนี้" /> : (
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>#</th><th>วันที่</th><th>วันในสัปดาห์</th><th>ชื่อวันหยุด</th><th>จัดการ</th></tr></thead>
+              <tbody>
+                {holidays.map((h, i) => {
+                  const d = new Date(h.date + 'T12:00:00+07:00');
+                  const days = ['อาทิตย์','จันทร์','อังคาร','พุธ','พฤหัสบดี','ศุกร์','เสาร์'];
+                  return (
+                    <tr key={h.id}>
+                      <td>{i+1}</td>
+                      <td style={{fontFamily:'var(--mono)'}}>{d.toLocaleDateString('th-TH', {day:'2-digit',month:'short',year:'numeric'})}</td>
+                      <td><span className="badge badge-info">{days[d.getDay()]}</span></td>
+                      <td style={{fontWeight:500}}>{h.name}</td>
+                      <td><button className="btn btn-sm btn-danger" onClick={() => del(h.id, h.name)}>🗑️ ลบ</button></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+// ═══════════════════════════════════════════
+// TAB: ฐานข้อมูล — หน้าภาพรวม (DB Overview)
+// ═══════════════════════════════════════════
+function DBOverviewTab({ addToast, onNavigate }) {
+  const { data: students }    = useApi('/api/students');
+  const { data: classrooms }  = useApi('/api/classrooms');
+  const { data: lineGroups }  = useApi('/api/line-groups/all');
+  const { data: departments } = useApi('/api/departments');
+  const { data: faceData }    = useApi('/api/face-registrations');
+  const currentYear = new Date().getFullYear();
+  const { data: holidays }    = useApi(`/api/holidays?year=${currentYear}`);
+
+  const cards = [
+    {
+      id:'students', icon:'🎓', label:'ระบบนักเรียน',
+      desc:'จัดกลุ่มตามห้อง · ดูรายวิชา · ยืนยันการลงทะเบียน',
+      count: Array.isArray(students) ? students.length : null,
+      unit:'คน', color:'var(--accent)'
+    },
+    {
+      id:'linegroups', icon:'💬', label:'ระบบกลุ่มไลน์',
+      desc:'เชื่อมกลุ่ม LINE กับห้องเรียน เพื่อส่ง QR Code',
+      count: Array.isArray(lineGroups) ? lineGroups.filter(g => g.is_active).length : null,
+      unit:'กลุ่ม', color:'var(--success)'
+    },
+    {
+      id:'classrooms', icon:'📍', label:'ระบบพิกัดห้อง',
+      desc:'กำหนดพิกัด GPS สำหรับตรวจสอบตำแหน่งนักเรียน',
+      count: Array.isArray(classrooms) ? classrooms.length : null,
+      unit:'ห้อง', color:'var(--warning)'
+    },
+    {
+      id:'face', icon:'🤳', label:'ลงทะเบียนใบหน้า',
+      desc:'บันทึก Face ID สำหรับยืนยันตัวตนตอนเช็คชื่อ',
+      count: Array.isArray(faceData) ? faceData.length : null,
+      unit:'ใบหน้า', color:'var(--sick)'
+    },
+    {
+      id:'departments', icon:'🏛️', label:'แผนกวิชา',
+      desc:'กำหนดแผนกสำหรับนักเรียนเลือกตอนลงทะเบียนครั้งแรก',
+      count: Array.isArray(departments) ? departments.length : null,
+      unit:'แผนก', color:'var(--personal)'
+    },
+    {
+      id:'holidays', icon:'🗓️', label:'วันหยุดปฏิทิน',
+      desc:'กำหนดวันหยุด — ไม่ส่ง QR Code · หักเวลาเรียน',
+      count: Array.isArray(holidays) ? holidays.length : null,
+      unit:'วัน', color:'var(--danger)'
+    },
+  ];
+
+  return (
+    <div>
+      <div style={{marginBottom:18,padding:'14px 18px',background:'var(--surface)',border:'1px solid var(--border)',borderRadius:'var(--radius)',fontSize:13,color:'var(--text2)'}}>
+        🗄️ ศูนย์กลางจัดการฐานข้อมูลทั้งหมด — คลิกการ์ดเพื่อเข้าสู่ระบบย่อย
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(270px,1fr))',gap:14}}>
+        {cards.map(card => (
+          <div key={card.id}
+            onClick={() => onNavigate(card.id)}
+            style={{
+              background:'var(--surface)',border:'1px solid var(--border)',
+              borderLeft:`4px solid ${card.color}`,
+              borderRadius:'var(--radius)',padding:'18px 20px',
+              cursor:'pointer',transition:'all .2s',boxShadow:'var(--shadow-sm)',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.transform='translateY(-2px)'; e.currentTarget.style.boxShadow='var(--shadow-lg)'; }}
+            onMouseLeave={e => { e.currentTarget.style.transform=''; e.currentTarget.style.boxShadow='var(--shadow-sm)'; }}
+          >
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
+              <div style={{display:'flex',alignItems:'center',gap:10}}>
+                <span style={{fontSize:22}}>{card.icon}</span>
+                <strong style={{fontSize:14}}>{card.label}</strong>
+              </div>
+              {card.count !== null
+                ? <div style={{textAlign:'right'}}>
+                    <div style={{fontSize:22,fontWeight:700,color:card.color,fontFamily:'var(--mono)'}}>{card.count}</div>
+                    <div style={{fontSize:10,color:'var(--text3)'}}>{card.unit}</div>
+                  </div>
+                : <div style={{width:20,height:20,border:'2px solid var(--border)',borderTopColor:card.color,borderRadius:'50%',animation:'spin .7s linear infinite'}}></div>
+              }
+            </div>
+            <p style={{fontSize:12,color:'var(--text2)',lineHeight:1.6,marginBottom:10}}>{card.desc}</p>
+            <div style={{fontSize:12,fontWeight:600,color:card.color}}>เปิดจัดการ →</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 const TABS = [
-  { id:'schedules', label:'ตารางสอน', icon:'📅' },
-  { id:'students', label:'นักเรียน', icon:'🎓' },
-  { id:'attendance', label:'เช็คชื่อ', icon:'📋' },
-  { id:'qr', label:'ส่ง QR', icon:'📱' },
-  { id:'linegroups', label:'กลุ่ม LINE', icon:'💬' },
-  { id:'classrooms', label:'พิกัดห้อง', icon:'📍' },
-  { id:'face', label:'ลงทะเบียนใบหน้า', icon:'🤳' },
-  { id:'reports', label:'รายงาน', icon:'📊' },
+  { id:'schedules', label:'ตารางสอน', icon:'📅', group:'main' },
+  { id:'attendance', label:'เช็คชื่อ', icon:'📋', group:'main' },
+  { id:'qr', label:'ส่ง QR', icon:'📱', group:'main' },
+  { id:'reports', label:'รายงาน', icon:'📊', group:'main' },
+  { id:'db', label:'ฐานข้อมูล', icon:'🗄️', group:'main', hasChildren: true },
+  { id:'students', label:'นักเรียน', icon:'🎓', group:'db' },
+  { id:'linegroups', label:'กลุ่ม LINE', icon:'💬', group:'db' },
+  { id:'classrooms', label:'พิกัดห้อง', icon:'📍', group:'db' },
+  { id:'face', label:'ลงทะเบียนใบหน้า', icon:'🤳', group:'db' },
+  { id:'departments', label:'แผนกวิชา', icon:'🏛️', group:'db' },
+  { id:'holidays', label:'วันหยุด', icon:'📅', group:'db' },
 ];
 
 function App() {
   const [activeTab, setActiveTab] = useState('schedules');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { toasts, addToast, removeToast } = useToast();
+  const dbTabs = ['db','students','linegroups','classrooms','face','departments','holidays'];
+  const [dbExpanded, setDbExpanded] = useState(false);
 
   const today = new Date().toLocaleDateString('th-TH', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
 
@@ -1723,6 +2382,9 @@ function App() {
       case 'classrooms': return <ClassroomsTab addToast={addToast} />;
       case 'face': return <FaceRegTab addToast={addToast} />;
       case 'reports': return <ReportsTab addToast={addToast} />;
+      case 'db': return <DBOverviewTab addToast={addToast} onNavigate={switchTo} />;
+      case 'departments': return <DepartmentsTab addToast={addToast} />;
+      case 'holidays': return <HolidaysTab addToast={addToast} />;
       default: return null;
     }
   };
@@ -1730,6 +2392,7 @@ function App() {
   const switchTo = (id) => {
     setActiveTab(id);
     setSidebarOpen(false);
+    if (dbTabs.includes(id)) setDbExpanded(true);
   };
 
   return (
@@ -1746,7 +2409,44 @@ function App() {
           <p>วิทยาลัยอาชีวศึกษากาญจนบุรี</p>
         </div>
         <nav className="sidebar-nav">
-          {TABS.map(tab => (
+          {TABS.filter(t => t.group === 'main').map(tab => tab.hasChildren ? (
+            <div key={tab.id}>
+              <button
+                className={`nav-item ${dbTabs.includes(activeTab) ? 'active' : ''}`}
+                onClick={() => {
+                  if (dbExpanded && dbTabs.includes(activeTab)) {
+                    setDbExpanded(false);
+                  } else {
+                    setDbExpanded(true);
+                    if (!dbTabs.includes(activeTab)) switchTo('db');
+                  }
+                }}
+                style={{width:'100%',textAlign:'left',justifyContent:'space-between'}}>
+                <div style={{display:'flex',alignItems:'center',gap:11}}>
+                  <span className="icon">{tab.icon}</span>
+                  <span className="label">{tab.label}</span>
+                </div>
+                <span style={{
+                  fontSize:9,opacity:.7,marginRight:2,display:'inline-block',
+                  transition:'transform .3s',
+                  transform: dbExpanded ? 'rotate(180deg)' : 'rotate(0deg)'
+                }}>▼</span>
+              </button>
+              {dbExpanded && (
+                <div style={{paddingLeft:12,borderLeft:'2px solid rgba(255,255,255,.06)',marginLeft:22}}>
+                  {TABS.filter(t => t.group === 'db').map(sub => (
+                    <button key={sub.id}
+                      className={`nav-item ${activeTab === sub.id ? 'active' : ''}`}
+                      onClick={() => switchTo(sub.id)}
+                      style={{fontSize:12,padding:'7px 10px'}}>
+                      <span className="icon" style={{fontSize:13}}>{sub.icon}</span>
+                      <span className="label">{sub.label}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
             <button key={tab.id} className={`nav-item ${activeTab === tab.id ? 'active' : ''}`} onClick={() => switchTo(tab.id)}>
               <span className="icon">{tab.icon}</span>
               <span className="label">{tab.label}</span>
