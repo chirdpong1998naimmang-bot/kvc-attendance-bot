@@ -751,3 +751,117 @@ router.delete('/face-registrations/:studentId', async (req, res) => {
 });
 
 module.exports = { dashboardApiRouter: router };
+
+// ═══════════════════════════════════════════
+// DEPARTMENTS API
+// ═══════════════════════════════════════════
+router.get('/departments', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM departments ORDER BY name');
+    res.json(result.rows);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/departments', async (req, res) => {
+  try {
+    const { name, short_name } = req.body;
+    if (!name) return res.status(400).json({ error: 'กรุณาระบุชื่อแผนก' });
+    const result = await pool.query(
+      'INSERT INTO departments (name, short_name) VALUES ($1, $2) RETURNING *',
+      [name, short_name || null]
+    );
+    res.json(result.rows[0]);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.put('/departments/:id', async (req, res) => {
+  try {
+    const { name, short_name, is_active } = req.body;
+    const result = await pool.query(
+      'UPDATE departments SET name=$1, short_name=$2, is_active=$3 WHERE id=$4 RETURNING *',
+      [name, short_name || null, is_active !== false, req.params.id]
+    );
+    res.json(result.rows[0]);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.delete('/departments/:id', async (req, res) => {
+  try {
+    await pool.query('DELETE FROM departments WHERE id=$1', [req.params.id]);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ═══════════════════════════════════════════
+// HOLIDAYS API
+// ═══════════════════════════════════════════
+router.get('/holidays', async (req, res) => {
+  try {
+    const { year } = req.query;
+    let q = 'SELECT * FROM holidays ORDER BY date';
+    let params = [];
+    if (year) { q = 'SELECT * FROM holidays WHERE EXTRACT(YEAR FROM date) = $1 ORDER BY date'; params = [year]; }
+    const result = await pool.query(q, params);
+    res.json(result.rows);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/holidays', async (req, res) => {
+  try {
+    const { date, name } = req.body;
+    if (!date || !name) return res.status(400).json({ error: 'กรุณาระบุวันที่และชื่อวันหยุด' });
+    const result = await pool.query(
+      'INSERT INTO holidays (date, name) VALUES ($1, $2) ON CONFLICT (date) DO UPDATE SET name=$2 RETURNING *',
+      [date, name]
+    );
+    res.json(result.rows[0]);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.delete('/holidays/:id', async (req, res) => {
+  try {
+    await pool.query('DELETE FROM holidays WHERE id=$1', [req.params.id]);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /api/students/by-section — นักเรียนจัดกลุ่มตามห้อง + วิชา
+router.get('/students/by-section', async (req, res) => {
+  try {
+    const students = await pool.query(
+      `SELECT s.id, s.student_code, s.name, s.prefix, s.first_name, s.last_name,
+              s.group_name, s.education_level, s.major, s.year, s.room,
+              s.line_user_id, s.approval_status, s.is_active
+       FROM students s WHERE s.is_active = TRUE
+       ORDER BY s.group_name, s.student_code`
+    );
+    const schedules = await pool.query(
+      `SELECT sch.section, sub.subject_code, sub.subject_name, sub.credits,
+              t.name AS teacher_name
+       FROM schedules sch
+       JOIN subjects sub ON sch.subject_id = sub.id
+       LEFT JOIN teachers t ON sch.teacher_id = t.id
+       WHERE sch.is_active = TRUE
+       ORDER BY sch.section, sub.subject_code`
+    );
+
+    // จัดกลุ่มตามห้อง
+    const sections = {};
+    students.rows.forEach(st => {
+      const key = st.group_name || 'ไม่ระบุห้อง';
+      if (!sections[key]) sections[key] = { section: key, students: [], subjects: [] };
+      sections[key].students.push(st);
+    });
+    schedules.rows.forEach(sch => {
+      const key = sch.section ? sch.section.split(' - ')[0].trim() : '';
+      Object.keys(sections).forEach(k => {
+        if (k === key || k.startsWith(key)) {
+          const already = sections[k].subjects.find(s => s.subject_code === sch.subject_code);
+          if (!already) sections[k].subjects.push(sch);
+        }
+      });
+    });
+
+    res.json(Object.values(sections));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
