@@ -454,9 +454,7 @@ function SchedulesTab({ addToast }) {
         ...schedulePeriods
       };
       const url = isEdit ? `${API}/api/schedules/${form._id || form.id}` : `${API}/api/schedules`;
-      const r = await fetch(url, { method: isEdit ? 'PUT' : 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
-      const json = await r.json();
-      if (!r.ok) throw new Error(json.error || 'Failed');
+      await safeFetch(url, { method: isEdit ? 'PUT' : 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
       addToast(isEdit ? 'แก้ไขสำเร็จ' : 'เพิ่มสำเร็จ');
       setModal(null); reload();
     } catch (e) { addToast(e.message, 'error'); }
@@ -465,7 +463,7 @@ function SchedulesTab({ addToast }) {
 
   const del = async (id) => {
     if (!confirm('ยืนยันการลบ?')) return;
-    try { await fetch(`${API}/api/schedules/${id}`, { method:'DELETE' }); addToast('ลบสำเร็จ'); reload(); }
+    try { await safeFetch(`${API}/api/schedules/${id}`, { method:'DELETE' }); addToast('ลบสำเร็จ'); reload(); }
     catch (e) { addToast(e.message, 'error'); }
   };
 
@@ -640,9 +638,7 @@ function StudentsTab({ addToast }) {
     if (!confirm(`ยืนยันนักเรียน "${name}" ?`)) return;
     setApprovingId(id);
     try {
-      const r = await fetch(`${API}/api/students/${id}/approve`, { method:'POST' });
-      const json = await r.json();
-      if (!r.ok) throw new Error(json.error || 'Failed');
+      await safeFetch(`${API}/api/students/${id}/approve`, { method:'POST' });
       addToast('ยืนยันนักเรียนสำเร็จ');
       reload(); reloadPending();
     } catch (e) { addToast(e.message, 'error'); }
@@ -653,9 +649,7 @@ function StudentsTab({ addToast }) {
     if (!confirm(`ปฏิเสธคำขอของ "${name}" ?`)) return;
     setApprovingId(id);
     try {
-      const r = await fetch(`${API}/api/students/${id}/reject`, { method:'POST' });
-      const json = await r.json();
-      if (!r.ok) throw new Error(json.error || 'Failed');
+      await safeFetch(`${API}/api/students/${id}/reject`, { method:'POST' });
       addToast('ปฏิเสธคำขอแล้ว');
       reloadPending();
     } catch (e) { addToast(e.message, 'error'); }
@@ -667,9 +661,7 @@ function StudentsTab({ addToast }) {
     try {
       const isEdit = modal === 'edit';
       const url = isEdit ? `${API}/api/students/${form._id || form.id}` : `${API}/api/students`;
-      const r = await fetch(url, { method: isEdit ? 'PUT' : 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(form) });
-      const json = await r.json();
-      if (!r.ok) throw new Error(json.error || 'Failed');
+      await safeFetch(url, { method: isEdit ? 'PUT' : 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(form) });
       addToast(isEdit ? 'แก้ไขสำเร็จ' : 'เพิ่มสำเร็จ');
       setModal(null); reload();
     } catch (e) { addToast(e.message, 'error'); }
@@ -678,7 +670,7 @@ function StudentsTab({ addToast }) {
 
   const del = async (id) => {
     if (!confirm('ยืนยันการลบ?')) return;
-    try { await fetch(`${API}/api/students/${id}`, { method:'DELETE' }); addToast('ลบสำเร็จ'); reload(); }
+    try { await safeFetch(`${API}/api/students/${id}`, { method:'DELETE' }); addToast('ลบสำเร็จ'); reload(); }
     catch (e) { addToast(e.message, 'error'); }
   };
 
@@ -987,11 +979,10 @@ function AttendanceTab({ addToast }) {
   // ─── Update status via PUT ───
   const updateStatus = async (id, newStatus) => {
     try {
-      const r = await fetch(`${API}/api/attendance/${id}`, {
+      await safeFetch(`${API}/api/attendance/${id}`, {
         method:'PUT', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({ status: newStatus })
       });
-      if (!r.ok) throw new Error('Failed');
       addToast(`แก้สถานะเป็น "${statusMap[newStatus]}" สำเร็จ`);
       setEditingId(null);
       fetchAtt();
@@ -1002,8 +993,7 @@ function AttendanceTab({ addToast }) {
   const deleteAttendance = async (id) => {
     if (!confirm('ยืนยันลบข้อมูลเช็คชื่อนี้?')) return;
     try {
-      const r = await fetch(`${API}/api/attendance/${id}`, { method:'DELETE' });
-      if (!r.ok) throw new Error('Failed');
+      await safeFetch(`${API}/api/attendance/${id}`, { method:'DELETE' });
       addToast('ลบข้อมูลเช็คชื่อสำเร็จ');
       fetchAtt();
     } catch (e) { addToast(e.message, 'error'); }
@@ -1015,12 +1005,10 @@ function AttendanceTab({ addToast }) {
     if (!manualForm.schedule_id) { addToast('กรุณาเลือกวิชา', 'error'); return; }
     setManualSaving(true);
     try {
-      const r = await fetch(`${API}/api/attendance/manual`, {
+      const json = await safeFetch(`${API}/api/attendance/manual`, {
         method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({ ...manualForm, date })
       });
-      const json = await r.json();
-      if (!r.ok) throw new Error(json.error || 'Failed');
       addToast(`บันทึก${statusMap[manualForm.status]}สำเร็จ`);
       setManualModal(false);
       setManualForm({ student_id:'', schedule_id:'', status:'sick_leave', remark:'' });
@@ -1186,12 +1174,10 @@ function QRTab({ addToast }) {
     }
     setSending(true);
     try {
-      const r = await fetch(`${API}/api/send-qr`, {
+      const json = await safeFetch(`${API}/api/send-qr`, {
         method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({ schedule_id: selectedSchedule, qrType: qrType })
       });
-      const json = await r.json();
-      if (!r.ok) throw new Error(json.message || json.error || 'Failed');
       setResult(json);
       addToast(`ส่ง QR ${qrType === 'check_in' ? 'เข้าเรียน' : 'ออกเรียน'} สำเร็จ`);
     } catch (e) { addToast(e.message, 'error'); }
@@ -1280,8 +1266,7 @@ function ClassroomsTab({ addToast }) {
       const isEdit = modal === 'edit';
       const url = isEdit ? `${API}/api/classrooms/${form._id || form.id}` : `${API}/api/classrooms`;
       const payload = {...form, latitude:parseFloat(form.latitude), longitude:parseFloat(form.longitude), allowed_radius_m:parseInt(form.allowed_radius_m)};
-      const r = await fetch(url, { method: isEdit ? 'PUT' : 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
-      if (!r.ok) throw new Error('Failed');
+      await safeFetch(url, { method: isEdit ? 'PUT' : 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
       addToast(isEdit ? 'แก้ไขสำเร็จ' : 'เพิ่มสำเร็จ');
       setModal(null); reload();
     } catch (e) { addToast(e.message, 'error'); }
@@ -1290,7 +1275,7 @@ function ClassroomsTab({ addToast }) {
 
   const del = async (id) => {
     if (!confirm('ยืนยันการลบ?')) return;
-    try { await fetch(`${API}/api/classrooms/${id}`, { method:'DELETE' }); addToast('ลบสำเร็จ'); reload(); }
+    try { await safeFetch(`${API}/api/classrooms/${id}`, { method:'DELETE' }); addToast('ลบสำเร็จ'); reload(); }
     catch (e) { addToast(e.message, 'error'); }
   };
 
@@ -1399,12 +1384,10 @@ function FaceRegTab({ addToast }) {
     if (!selectedStudent || !capturedImg) { addToast('เลือกนักเรียนและถ่ายรูปก่อน','error'); return; }
     setUploading(true);
     try {
-      const r = await fetch(`${API}/api/face-register`, {
+      await safeFetch(`${API}/api/face-register`, {
         method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({ student_id: selectedStudent, photo: capturedImg })
       });
-      const json = await r.json();
-      if (!r.ok) throw new Error(json.error || 'Failed');
       addToast('ลงทะเบียนใบหน้าสำเร็จ');
       setCapturedImg(null); setSelectedStudent('');
       reloadFace();
@@ -1415,9 +1398,7 @@ function FaceRegTab({ addToast }) {
   const deleteFace = async (studentId, studentName) => {
     if (!confirm(`ยืนยันลบข้อมูลใบหน้าของ ${studentName}?\nนักเรียนจะต้องลงทะเบียนใบหน้าใหม่`)) return;
     try {
-      const r = await fetch(`${API}/api/face-registrations/${studentId}`, { method:'DELETE' });
-      const json = await r.json();
-      if (!r.ok) throw new Error(json.error || 'Failed');
+      await safeFetch(`${API}/api/face-registrations/${studentId}`, { method:'DELETE' });
       addToast(`ลบข้อมูลใบหน้าของ ${studentName} สำเร็จ`);
       reloadFace();
     } catch (e) { addToast(e.message, 'error'); }
@@ -1975,13 +1956,11 @@ function LineGroupsTab({ addToast }) {
     if (!confirm(`${actionText}กลุ่ม LINE "${name}" ใช่ไหม?`)) return;
     setBusyId(group.id);
     try {
-      const r = await fetch(`${API}/api/line-groups/${group.id}`, {
+      await safeFetch(`${API}/api/line-groups/${group.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ is_active: isActive })
       });
-      const json = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(json.error || `HTTP ${r.status}`);
       addToast(`${actionText}กลุ่ม LINE แล้ว`);
       reload();
     } catch (e) {
@@ -2069,9 +2048,7 @@ function DepartmentsTab({ addToast }) {
     try {
       const url = editId ? `${API}/api/departments/${editId}` : `${API}/api/departments`;
       const method = editId ? 'PUT' : 'POST';
-      const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
-      const json = await r.json();
-      if (!r.ok) throw new Error(json.error);
+      await safeFetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
       addToast(editId ? 'แก้ไขแผนกแล้ว' : 'เพิ่มแผนกแล้ว');
       setForm({ name: '', short_name: '' }); setEditId(null); reload();
     } catch (e) { addToast(e.message, 'error'); }
@@ -2081,7 +2058,7 @@ function DepartmentsTab({ addToast }) {
   const del = async (id, name) => {
     if (!confirm(`ลบแผนก "${name}" ใช่ไหม?`)) return;
     try {
-      await fetch(`${API}/api/departments/${id}`, { method: 'DELETE' });
+      await safeFetch(`${API}/api/departments/${id}`, { method: 'DELETE' });
       addToast('ลบแผนกแล้ว'); reload();
     } catch (e) { addToast(e.message, 'error'); }
   };
