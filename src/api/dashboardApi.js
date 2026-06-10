@@ -622,7 +622,7 @@ router.post('/attendance/manual', async (req, res) => {
 
     const result = await pool.query(
       `INSERT INTO attendance_records (student_id, schedule_id, status, check_type, remark, checked_at, is_manual)
-       VALUES ($1, $2, $3, 'manual', $4, ($5::date + LOCALTIME), TRUE)
+       VALUES ($1, $2, $3, 'check_in', $4, ($5::date + LOCALTIME), TRUE)
        RETURNING id`,
       [student_id, schedule_id || null, status, remark || STATUS_LABELS[status], checkDate]
     );
