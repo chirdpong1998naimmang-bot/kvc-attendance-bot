@@ -469,7 +469,8 @@ router.post('/students', async (req, res) => {
 
 router.put('/students/:id', async (req, res) => {
   try {
-    const { title, first_name, last_name, name, section, level, year, department } = req.body;
+    const { title, first_name, last_name, name, section, level, year, department, student_code, student_id, line_user_id } = req.body;
+    const newStudentCode = student_code || student_id || null;
     const fullName = name || ((title || '') + (first_name || '') + ' ' + (last_name || '')).trim();
 
     // ประกอบ group_name ใหม่
@@ -477,21 +478,23 @@ router.put('/students/:id', async (req, res) => {
 
     await pool.query(
       `UPDATE students SET
-        name = COALESCE($1, name),
-        group_name = COALESCE($2, group_name),
-        education_level = COALESCE($3, education_level),
-        prefix = COALESCE($4, prefix),
-        first_name = COALESCE($5, first_name),
-        last_name = COALESCE($6, last_name),
-        department = COALESCE($7, department),
-        year = COALESCE($8, year),
-        section = COALESCE($9, section),
-        class_year = COALESCE($8, class_year),
-        room = COALESCE($9, room),
-        major = COALESCE($7, major),
+        student_code = COALESCE($1, student_code),
+        name = COALESCE($2, name),
+        group_name = COALESCE($3, group_name),
+        education_level = COALESCE($4, education_level),
+        prefix = COALESCE($5, prefix),
+        first_name = COALESCE($6, first_name),
+        last_name = COALESCE($7, last_name),
+        department = COALESCE($8, department),
+        year = COALESCE($9, year),
+        section = COALESCE($10, section),
+        class_year = COALESCE($9, class_year),
+        room = COALESCE($10, room),
+        major = COALESCE($8, major),
+        line_user_id = COALESCE($11, line_user_id),
         updated_at = NOW()
-      WHERE id = $10`,
-      [fullName, groupName, level, title || null, first_name || null, last_name || null, department, year, section, req.params.id]
+      WHERE id = $12`,
+      [newStudentCode, fullName, groupName, level, title || null, first_name || null, last_name || null, department, year, section, line_user_id || null, req.params.id]
     );
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
