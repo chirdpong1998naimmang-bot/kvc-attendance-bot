@@ -213,6 +213,17 @@ async function runStartupMigrations() {
   } catch (err) {
     console.warn('⚠️ qr_session_id migration warning:', err.message);
   }
+
+  // ─── allow NULL embedding_data (ครูลงทะเบียนรูป รอ LIFF สร้าง embedding ทีหลัง) ───
+  try {
+    await pool.query(`
+      ALTER TABLE face_embeddings
+        ALTER COLUMN embedding_data DROP NOT NULL
+    `);
+    console.log('✅ Migration: embedding_data nullable ready');
+  } catch (err) {
+    console.warn('⚠️ embedding_data migration warning:', err.message);
+  }
 }
 
 async function start() {
