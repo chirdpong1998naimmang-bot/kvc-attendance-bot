@@ -617,13 +617,18 @@ router.get('/absence-rate', async (req, res) => {
       [subject_id]
     );
     const sessionIds = sessionsResult.rows.map(r => r.id);
+    // map: sessionId -> date string (YYYY-MM-DD)
+    const sessionDateMap = {};
+    sessionsResult.rows.forEach(r => {
+      sessionDateMap[r.id] = new Date(r.session_date).toISOString().slice(0, 10);
+    });
     const sessionCount = sessionIds.length;
 
-    // ดึง attendance records
+    // ดึง QR attendance records
     let attendanceMap = {};
     if (sessionIds.length > 0) {
       const attResult = await pool.query(
-        `SELECT ar.student_id, ar.status, ar.checked_at, ar.checked_out_at
+        `SELECT ar.student_id, ar.status, ar.qr_session_id
          FROM attendance_records ar
          WHERE ar.qr_session_id = ANY($1::uuid[])`,
         [sessionIds]
@@ -634,12 +639,39 @@ router.get('/absence-rate', async (req, res) => {
       });
     }
 
+    // ดึง manual attendance records (เช็คชื่อมือ) สำหรับตารางสอนนี้
+    const manualResult = await pool.query(
+      `SELECT ar.student_id, ar.status, DATE(ar.checked_at AT TIME ZONE 'Asia/Bangkok') AS check_date
+       FROM attendance_records ar
+       WHERE ar.is_manual = TRUE AND ar.schedule_id = $1`,
+      [sched.id]
+    );
+    // map: studentId -> Set of dates ที่เช็คมือ
+    const manualDatesMap = {};
+    manualResult.rows.forEach(r => {
+      const d = r.check_date instanceof Date
+        ? r.check_date.toISOString().slice(0, 10)
+        : String(r.check_date).slice(0, 10);
+      if (!manualDatesMap[r.student_id]) manualDatesMap[r.student_id] = new Set();
+      if (['present','late','sick_leave','personal_leave'].includes(r.status)) {
+        manualDatesMap[r.student_id].add(d);
+      }
+    });
+
+    const PRESENT_STATUSES = new Set(['present','late','sick_leave','personal_leave']);
+
     const students = studentsResult.rows.map(st => {
-      const records = attendanceMap[st.id] || [];
-      const absentCount = sessionCount - records.filter(r =>
-        r.status === 'present' || r.status === 'late' ||
-        r.status === 'sick_leave' || r.status === 'personal_leave'
-      ).length;
+      const qrRecords = attendanceMap[st.id] || [];
+      const manualDates = manualDatesMap[st.id] || new Set();
+
+      // นับ sessions ที่นักเรียนเข้าเรียน (QR หรือ manual อย่างใดอย่างหนึ่ง)
+      let attendedCount = 0;
+      for (const sid of sessionIds) {
+        const hasQR = qrRecords.some(r => r.qr_session_id === sid && PRESENT_STATUSES.has(r.status));
+        const hasManual = manualDates.has(sessionDateMap[sid]);
+        if (hasQR || hasManual) attendedCount++;
+      }
+      const absentCount = sessionCount - attendedCount;
       const absentMinutes = absentCount * minutesPerSession;
       const absentHours = (absentMinutes / 60).toFixed(1);
       const attendancePercent = totalMinutes > 0
