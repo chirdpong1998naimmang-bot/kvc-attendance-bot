@@ -194,11 +194,14 @@ router.get('/schedules', async (req, res) => {
 
 router.post('/schedules', async (req, res) => {
   try {
-    const { subject_id, classroom_id, line_group_id, teacher_id, day_of_week, start_time, end_time, auto_send, subject_code, subject_name, section, room, teacher_name, semester, academic_year } = req.body;
+    const { subject_id, classroom_id, line_group_id, teacher_id, day_of_week, start_time, end_time, auto_send, subject_code, subject_name, section, room, teacher_name, semester, academic_year, start_period, end_period } = req.body;
     const dayIndex = typeof day_of_week === 'number' ? day_of_week : DAYS_TH.indexOf(day_of_week);
 
-    const startP = Object.entries(PERIOD_TIMES).find(([,v]) => v.s === start_time)?.[0] || 1;
-    const endP = Object.entries(PERIOD_TIMES).find(([,v]) => v.e === end_time)?.[0] || 2;
+    // ใช้ start_period/end_period ที่ frontend คำนวณมา ถ้าไม่มีค่อย fallback
+    let startP = start_period || Object.entries(PERIOD_TIMES).find(([,v]) => v.s === start_time)?.[0] || 1;
+    let endP = end_period || Object.entries(PERIOD_TIMES).find(([,v]) => v.e === end_time)?.[0] || startP;
+    startP = Number(startP);
+    endP = Math.max(Number(endP), startP); // ป้องกัน constraint violation
 
     if (dayIndex < 0) {
       return res.status(400).json({ error: 'วันไม่ถูกต้อง' });
