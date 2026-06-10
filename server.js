@@ -202,6 +202,17 @@ async function runStartupMigrations() {
   } catch (err) {
     console.warn('⚠️ holidays migration warning:', err.message);
   }
+
+  // ─── allow NULL qr_session_id for manual attendance ───
+  try {
+    await pool.query(`
+      ALTER TABLE attendance_records
+        ALTER COLUMN qr_session_id DROP NOT NULL
+    `);
+    console.log('✅ Migration: qr_session_id nullable ready');
+  } catch (err) {
+    console.warn('⚠️ qr_session_id migration warning:', err.message);
+  }
 }
 
 async function start() {
