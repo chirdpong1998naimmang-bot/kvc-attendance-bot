@@ -5,7 +5,7 @@
 const express = require('express');
 const { pool } = require('../config/database');
 const { validateQRToken } = require('../services/qrService');
-const { sendCheckInConfirmation, notifyTeacher } = require('../services/lineService');
+// const { sendCheckInConfirmation, notifyTeacher } = require('../services/lineService'); // ปิดเพื่อประหยัด LINE quota (300 msg/เดือน)
 const { isWithinRadius } = require('../utils/gps');
 
 const router = express.Router();
@@ -537,29 +537,10 @@ router.post('/check-in', async (req, res) => {
     const checkedAtStr = checkedAt.toLocaleTimeString('th-TH', {
       hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Asia/Bangkok' });
 
-    // ส่งยืนยันให้นักเรียน
-    await sendCheckInConfirmation(lineUserId, {
-      studentName: student.name,
-      subjectName: session.subject_name,
-      checkType: session.qr_type,
-      checkedAt: checkedAtStr,
-      attendanceSummary  // ส่งสรุปชั่วโมงเรียนด้วย (ถ้า check-out)
-    });
-
-    // แจ้งครูผู้สอน
-    const teacherResult = await pool.query(
-      'SELECT line_user_id FROM teachers WHERE id = $1',
-      [session.teacher_id]
-    );
-    if (teacherResult.rows.length > 0 && teacherResult.rows[0].line_user_id) {
-      await notifyTeacher(teacherResult.rows[0].line_user_id, {
-        studentName: student.name,
-        subjectName: session.subject_name,
-        checkType: session.qr_type,
-        status,
-        attendanceSummary
-      });
-    }
+    // ปิดการส่ง push message ให้นักเรียนและครู เพื่อประหยัด LINE quota (300 msg/เดือน)
+    // นักเรียนดูผลได้จากหน้า LIFF โดยตรง และครูดูจาก Dashboard
+    // await sendCheckInConfirmation(lineUserId, { ... });
+    // await notifyTeacher(teacherLineId, { ... });
 
     // ---- 9. บันทึก Log ----
     await pool.query(
@@ -834,23 +815,8 @@ router.post('/leave-request', async (req, res) => {
     );
 
     // ---- 6. แจ้งครูผู้สอน ----
-    const teacherResult = await pool.query(
-      'SELECT line_user_id FROM teachers WHERE id = $1',
-      [session.teacher_id]
-    );
-    if (teacherResult.rows.length > 0 && teacherResult.rows[0].line_user_id) {
-      try {
-        await notifyTeacher(teacherResult.rows[0].line_user_id, {
-          studentName: student.name,
-          subjectName: session.subject_name,
-          checkType: 'leave',
-          status: leaveType,
-          remark: remark || ''
-        });
-      } catch (notifyErr) {
-        console.warn('Notify teacher failed:', notifyErr.message);
-      }
-    }
+    // ปิดการแจ้งครูผ่าน push message เพื่อประหยัด LINE quota — ครูดูจาก Dashboard แทน
+    // await notifyTeacher(teacherLineId, { ... });
 
     // ---- 7. บันทึก Log ----
     await pool.query(
