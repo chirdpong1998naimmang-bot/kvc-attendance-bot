@@ -504,13 +504,11 @@ router.get('/time-preview', async (req, res) => {
       const att = attMap[st.id];
       let actualMinutes = 0, percent = 0, passed = false;
 
-      if (att && att.check_in_time && att.check_out_time) {
-        const [ciH, ciM] = att.check_in_time.split(':').map(Number);
-        const [coH, coM] = att.check_out_time.split(':').map(Number);
-        actualMinutes = (coH * 60 + coM) - (ciH * 60 + ciM);
-        if (actualMinutes < 0) actualMinutes = 0;
-        percent = Math.min(100, Math.round((actualMinutes / scheduledMinutes) * 100));
-        passed = percent >= 80;
+      if (att && att.check_in_time) {
+        // เช็คชื่อเข้าเรียนแล้ว = นับว่าเรียนครบทั้งคาบ (100%)
+        actualMinutes = scheduledMinutes;
+        percent = 100;
+        passed = true;
       }
 
       const actualHours = Math.floor(actualMinutes / 60);
@@ -765,3 +763,4 @@ router.get('/checkin-log', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+                                                                                                                                                           

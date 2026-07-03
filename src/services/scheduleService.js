@@ -97,6 +97,16 @@ async function checkAndSendQR() {
 
     const { current_time: currentTime, today, day_of_week: dayOfWeek } = await getBangkokNow();
 
+    // ตรวจสอบวันหยุด
+    const holidayCheck = await pool.query(
+      "SELECT id FROM holidays WHERE date = $1 LIMIT 1",
+      [today]
+    );
+    if (holidayCheck.rows.length > 0) {
+      console.log('วันหยุด - ไม่ส่ง QR วันนี้:', today);
+      return;
+    }
+
     const schedulesResult = await pool.query(
     `SELECT s.*,
             sub.subject_name, sub.subject_code,
@@ -142,14 +152,12 @@ async function checkAndSendQR() {
 
     const sendBefore = resolveSendMinutesBefore(schedule.send_minutes_before);
     const checkInSendTime = subtractMinutes(classStart, sendBefore);
-    const checkOutSendTime = subtractMinutes(classEnd, 5);
 
     const shouldSendCheckIn = isWithinSendWindow(currentTime, checkInSendTime, classStart);
-    const shouldSendCheckOut = isWithinSendWindow(currentTime, checkOutSendTime, classEnd);
 
-    if (shouldSendCheckIn || shouldSendCheckOut) {
+    if (shouldSendCheckIn) {
       console.log(
-        `[Scheduler] ${schedule.subject_name} | now=${currentTime} start=${classStart} send=${checkInSendTime} before=${sendBefore}m | checkIn=${shouldSendCheckIn}`
+        `[Scheduler] ${schedule.subject_name} | now=${currentTime} start=${classStart} send=${checkInSendTime} before=${sendBefore}m`
       );
     }
 
@@ -160,17 +168,6 @@ async function checkAndSendQR() {
           await sendScheduledQR(schedule, 'check_in', today);
         } catch (err) {
           console.error(`❌ Auto-send check_in failed (schedule_id=${schedule.id}):`, err.message);
-        }
-      }
-    }
-
-    if (shouldSendCheckOut) {
-      const alreadySent = await hasQRBeenSent(schedule.id, 'check_out', today);
-      if (!alreadySent) {
-        try {
-          await sendScheduledQR(schedule, 'check_out', today);
-        } catch (err) {
-          console.error(`❌ Auto-send check_out failed (schedule_id=${schedule.id}):`, err.message);
         }
       }
     }
@@ -273,3 +270,4 @@ async function expireOldSessions() {
 }
 
 module.exports = { startScheduler };
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        

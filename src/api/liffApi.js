@@ -348,34 +348,12 @@ router.post('/check-in', async (req, res) => {
       return res.status(409).json({ success: false, error: 'คุณเช็คชื่อไปแล้ว' });
     }
 
-    // ---- 3.5 Check-out: หา record check-in ของวันนี้แล้ว UPDATE ----
-    let isCheckOut = false;
-    let existingRecord = null;
+    // ---- 3.5 ระบบยกเลิก Check-out QR แล้ว — เช็คชื่อเข้าเรียนอย่างเดียวพอ ----
     if (session.qr_type === 'check_out') {
-      // หา attendance record ที่เช็คชื่อเข้าเรียนของวิชานี้ วันนี้
-      const todayRecords = await pool.query(
-        `SELECT ar.id, ar.checked_out_at
-         FROM attendance_records ar
-         JOIN qr_sessions qs ON ar.qr_session_id = qs.id
-         WHERE ar.student_id = $1
-           AND qs.subject_id = $2
-           AND DATE(ar.checked_at AT TIME ZONE 'Asia/Bangkok') = DATE(NOW() AT TIME ZONE 'Asia/Bangkok')
-           AND ar.check_type = 'check_in'
-         ORDER BY ar.checked_at DESC
-         LIMIT 1`,
-        [student.id, session.subject_id]
-      );
-
-      if (todayRecords.rows.length === 0) {
-        return res.status(400).json({ success: false, error: 'ไม่พบข้อมูลเช็คชื่อเข้าเรียนของวิชานี้วันนี้ กรุณาเช็คชื่อเข้าเรียนก่อน' });
-      }
-
-      if (todayRecords.rows[0].checked_out_at) {
-        return res.status(409).json({ success: false, error: 'คุณเช็คชื่อออกเรียนไปแล้ว' });
-      }
-
-      isCheckOut = true;
-      existingRecord = todayRecords.rows[0];
+      return res.status(400).json({
+        success: false,
+        error: 'ระบบนี้ยกเลิกการเช็คชื่อออกเรียนแล้ว\nการสแกน QR เข้าเรียนถือว่าเรียนครบทั้งคาบโดยอัตโนมัติ'
+      });
     }
 
     // ---- 4. ตรวจสอบ Face Verification ----
@@ -439,99 +417,66 @@ router.post('/check-in', async (req, res) => {
     // ---- 7. บันทึกการเช็คชื่อ ----
     const checkedAt = new Date();
     let record;
-    let attendanceSummary = null; // สรุปชั่วโมงเรียน (เฉพาะ check-out)
+    let attendanceSummary = null;
 
-    if (isCheckOut && existingRecord) {
-      // === CHECK-OUT: UPDATE record เดิม ===
-      record = await pool.query(
-        `UPDATE attendance_records 
-         SET checked_out_at = $1, updated_at = NOW()
-         WHERE id = $2
-         RETURNING *`,
-        [checkedAt, existingRecord.id]
+    // === CHECK-IN: INSERT record ใหม่ + auto-set checked_out_at = เวลาสิ้นสุดคาบ ===
+    // เมื่อนักเรียนสแกน QR เข้าเรียนแล้ว ถือว่าเรียนครบทั้งคาบโดยอัตโนมัติ
+    let autoCheckOutAt = null;
+    let scheduledMinutes = 0;
+    try {
+      const schedResult = await pool.query(
+        `SELECT COALESCE(s.custom_start_time, pt_start.start_time)::TEXT AS start_time,
+                COALESCE(s.custom_end_time, pt_end.end_time)::TEXT AS end_time
+         FROM schedules s
+         LEFT JOIN period_times pt_start ON s.start_period = pt_start.period_number
+         LEFT JOIN period_times pt_end ON s.end_period = pt_end.period_number
+         WHERE s.id = $1`,
+        [session.schedule_id]
       );
-
-      // === คำนวณชั่วโมงเรียนจริง vs ตามตาราง ===
-      try {
-        // ดึงเวลาตามตาราง
-        const schedResult = await pool.query(
-          `SELECT s.custom_start_time, s.custom_end_time,
-                  pt_start.start_time AS period_start,
-                  pt_end.end_time AS period_end
-           FROM schedules s
-           LEFT JOIN period_times pt_start ON s.start_period = pt_start.period_number
-           LEFT JOIN period_times pt_end ON s.end_period = pt_end.period_number
-           WHERE s.id = $1`,
-          [session.schedule_id]
-        );
-
-        if (schedResult.rows.length > 0) {
-          const sched = schedResult.rows[0];
-          const schedStart = sched.custom_start_time || sched.period_start;
-          const schedEnd = sched.custom_end_time || sched.period_end;
-
-          if (schedStart && schedEnd) {
-            // เวลาตามตาราง (นาที)
-            const [sh, sm] = schedStart.split(':').map(Number);
-            const [eh, em] = schedEnd.split(':').map(Number);
-            const scheduledMinutes = (eh * 60 + em) - (sh * 60 + sm);
-
-            // เวลาจริงจาก check-in ถึง check-out (นาที)
-            const checkInTime = new Date(record.rows[0].checked_at);
-            const checkOutTime = checkedAt;
-            const actualMinutes = Math.round((checkOutTime - checkInTime) / 60000);
-
-            // คำนวณเปอร์เซ็นต์
-            const percent = Math.min(100, Math.round((actualMinutes / scheduledMinutes) * 100));
-            const passed = percent >= 80;
-
-            // ★ อัปเดตสถานะตามเกณฑ์ 80%
-            // ≥ 80% = มาเรียน (present), < 80% = สาย (late)
-            const newStatus = passed ? 'present' : 'late';
-            await pool.query(
-              'UPDATE attendance_records SET status = $1 WHERE id = $2',
-              [newStatus, existingRecord.id]
-            );
-            status = newStatus;
-
-            // แปลงเป็นชั่วโมง:นาที
-            const schedHours = Math.floor(scheduledMinutes / 60);
-            const schedMins = scheduledMinutes % 60;
-            const actualHours = Math.floor(actualMinutes / 60);
-            const actualMins = actualMinutes % 60;
-
-            attendanceSummary = {
-              scheduledTime: `${schedHours} ชม.${schedMins > 0 ? ` ${schedMins} น.` : ''}`,
-              scheduledMinutes,
-              actualTime: `${actualHours} ชม.${actualMins > 0 ? ` ${actualMins} น.` : ''}`,
-              actualMinutes,
-              percent,
-              passed,
-              checkInAt: checkInTime.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bangkok' }),
-              checkOutAt: checkOutTime.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bangkok' }),
-            };
-          }
+      if (schedResult.rows.length > 0) {
+        const { start_time, end_time } = schedResult.rows[0];
+        if (end_time) {
+          const [eh, em] = end_time.split(':').map(Number);
+          // set checked_out_at = วันนี้ + เวลาสิ้นสุดคาบ (Bangkok time)
+          const classEndDate = new Date(checkedAt);
+          classEndDate.setHours(eh, em, 0, 0);
+          autoCheckOutAt = classEndDate;
         }
-      } catch (calcErr) {
-        console.warn('Attendance duration calc error:', calcErr.message);
+        if (start_time && end_time) {
+          const [sh, sm] = start_time.split(':').map(Number);
+          const [eh, em] = end_time.split(':').map(Number);
+          scheduledMinutes = (eh * 60 + em) - (sh * 60 + sm);
+          const schedHours = Math.floor(scheduledMinutes / 60);
+          const schedMins = scheduledMinutes % 60;
+          attendanceSummary = {
+            scheduledTime: `${schedHours} ชม.${schedMins > 0 ? ` ${schedMins} น.` : ''}`,
+            scheduledMinutes,
+            actualTime: `${schedHours} ชม.${schedMins > 0 ? ` ${schedMins} น.` : ''}`,
+            actualMinutes: scheduledMinutes,
+            percent: 100,
+            passed: true,
+            checkInAt: checkedAt.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bangkok' }),
+            checkOutAt: end_time ? end_time.slice(0, 5) : '-',
+          };
+        }
       }
-
-    } else {
-      // === CHECK-IN: INSERT record ใหม่ (เหมือนเดิม) ===
-      record = await pool.query(
-        `INSERT INTO attendance_records 
-          (student_id, qr_session_id, check_type, student_lat, student_lng, 
-           distance_meters, face_verified, face_confidence, status, checked_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-         RETURNING *`,
-        [
-          student.id, session.id, session.qr_type,
-          studentLat, studentLng, distanceMeters,
-          faceVerified, faceConfidence || null,
-          status, checkedAt
-        ]
-      );
+    } catch (calcErr) {
+      console.warn('Auto-checkout time fetch error:', calcErr.message);
     }
+
+    record = await pool.query(
+      `INSERT INTO attendance_records
+        (student_id, qr_session_id, check_type, student_lat, student_lng,
+         distance_meters, face_verified, face_confidence, status, checked_at, checked_out_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       RETURNING *`,
+      [
+        student.id, session.id, session.qr_type,
+        studentLat, studentLng, distanceMeters,
+        faceVerified, faceConfidence || null,
+        status, checkedAt, autoCheckOutAt
+      ]
+    );
 
     // ---- 8. ส่งข้อความยืนยัน ----
     const checkedAtStr = checkedAt.toLocaleTimeString('th-TH', {
@@ -547,7 +492,7 @@ router.post('/check-in', async (req, res) => {
       `INSERT INTO system_logs (event_type, event_data, student_id)
        VALUES ($1, $2, $3)`,
       [
-        isCheckOut ? 'checkout_success' : 'checkin_success',
+        'checkin_success',
         JSON.stringify({
           check_type: session.qr_type,
           subject: session.subject_name,
@@ -1114,3 +1059,4 @@ router.get('/departments-public', async (req, res) => {
 });
 
 module.exports = { liffApiRouter: router };
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              
